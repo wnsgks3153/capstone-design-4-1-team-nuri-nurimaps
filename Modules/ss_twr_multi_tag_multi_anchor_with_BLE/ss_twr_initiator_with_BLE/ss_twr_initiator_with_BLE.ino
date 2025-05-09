@@ -139,7 +139,11 @@ static dwt_aes_key_t keys_options[NUM_OF_KEY_OPTIONS] = {
 };
 
 /* 거리 측정 간 딜레이 기간(단위: 밀리초) */
-#define RNG_DELAY_MS 1000
+float rangeDelay;
+int conversionMS = -10000000; //clockoffset에 conversionMS를 곱하여 딜레이용 시간으로 변환하기위한 변수
+
+double distanceAVG[3] = {0}; // 오차를 줄이기 위한 평균 계산용 소수 배열 변수
+int avgCount;
 
 /* 64 MHz PRF에 대한 기본 안테나 지연 값. 아래 참고 사항 2 참조. */
 #define TX_ANT_DLY 16385
@@ -188,8 +192,6 @@ uint8_t nonce[13]; /* IEEE 802.15.4 규격에 따라 사용되는 13바이트 no
 dwt_aes_job_t aes_job_tx, aes_job_rx;
 int8_t status;
 
-char txString[50];
-
 // BLE 서버에 연결/해제 시 호출되는 콜백 클래스
 class MyServerCallback : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
@@ -228,35 +230,34 @@ class CharacteristicCallback : public BLECharacteristicCallbacks {
   }
 };
 
+#define MAX_DEVICES 30
+#define MAX_NAME_LEN 30
+
+char filteredDeviceNames[MAX_DEVICES][MAX_NAME_LEN];  // 필터링된 이름 저장용 배열
+int filteredDeviceCount = 0;
+
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
-  /**
-   * 광고 중인 BLE 서버를 찾았을 때 호출됨
-   */
   void onResult(BLEAdvertisedDevice advertisedDevice) {
-    // We have found a device, let us now see if it contains the service we are looking for.
+
     uint8_t* addr = (uint8_t*)advertisedDevice.getAddress().getNative();
 
     if (addr[0] == 0xAC && addr[1] == 0x15 && addr[2] == 0x18) {
       Serial.print("UWB Anchor Device found: ");
       Serial.println(advertisedDevice.toString().c_str());
-      String deviceName = advertisedDevice.getName();
 
-      if (deviceName.startsWith("0x") && deviceName.length() == 18) {
-        const char* hexStr = deviceName.c_str() + 2;
-        anchorDestAddress = strtoull(hexStr, NULL, 16);
-
-        char buffer[20];
-        sprintf(buffer, "%016llX", (unsigned long long)anchorDestAddress);
-        Serial.print("Hex format: 0x");
-        Serial.println(buffer);
+      // 장치 이름이 "0x02"로 시작하고 길이가 정확히 18인지 확인
+      String nameStr = advertisedDevice.getName();  // 안전하게 String 객체로 저장
+      if (nameStr.startsWith("0x02") && nameStr.length() == 18) {
+        if (filteredDeviceCount < MAX_DEVICES) {
+          nameStr.toCharArray(filteredDeviceNames[filteredDeviceCount], MAX_NAME_LEN);  // 문자열 복사
+          filteredDeviceCount++;
+        }
       }
 
-      // BLEDevice::getScan()->stop();
       myDevice = new BLEAdvertisedDevice(advertisedDevice);
-      //doConnect = true;
     }
-  }  // onResult
-};   // MyAdvertisedDeviceCallbacks
+  }
+};
 
 /* 태그가 앵커와 통신하는 코드
    태그와 앵커가 여러개가 되며 앵커의 주소를 동적으로 가져와 순차적으로 통신할 때 사용하도록
@@ -265,6 +266,8 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
    이 함수를 사용할 때 미리 ESP32를 통해 UWB 앵커 주소를 받은 다음 앵커의 주소를 메서드로 넣어 호출만 하면 됨
    하단 loop() 부분을 참고
 */
+char txString[50];
+
 void communicateWithAnchor(uint64_t dest_addr) {
   /* 사용할 올바른 키를 설정 */
   dwt_set_keyreg_128(&keys_options[INITIATOR_KEY_INDEX - 1]);
@@ -380,6 +383,7 @@ void communicateWithAnchor(uint64_t dest_addr) {
 
       /* 캐리어 적분기 값을 읽어와서 클록 오프셋 비율을 계산. 아래의 NOTE 11 참조. */
       clockOffsetRatio = ((float)dwt_readclockoffset()) / (uint32_t)(1 << 26);
+      Serial.println(clockOffsetRatio, 8);
 
       /* 응답 메시지에서 타임스탬프를 가져옴. */
       resp_msg_get_ts(&rx_buffer[RESP_MSG_POLL_RX_TS_IDX], &poll_rx_ts);
@@ -392,17 +396,18 @@ void communicateWithAnchor(uint64_t dest_addr) {
       tof = ((rtd_init - rtd_resp * (1 - clockOffsetRatio)) / 2.0) * DWT_TIME_UNITS;
       distance = tof * SPEED_OF_LIGHT;
 
-      /* 계산된 거리를 LCD에 표시 */
-      // snprintf(dist_str, sizeof(dist_str), "DIST: %3.2f m", distance);
-      //sprintf(txString, "%llu = Dist : %.2fcm", (unsigned long long)dest_addr, distance);
-      sprintf(txString, "Dist : %.2fcm", distance);
+
+      // 디버그용 시리얼 출력부분
+      sprintf(txString, "%.2fm", distance);
       Serial.print(dest_addr);
       Serial.print(" = Dist : ");
       Serial.print(distance, 2);
-      Serial.println("cm");
+      Serial.println("m");
 
+      //실제 휴대폰으로 데이터 전송용 값 저장 및 notify() 호출을 통해 전달
       pCharacteristic->setValue(txString);
       pCharacteristic->notify();
+      rangeDelay = clockOffsetRatio * conversionMS + 50; // 항상 일정범위의 랜덤한 수로 변하는 ClockOffset을 응용하여 랜덤 딜레이 사용
     }
 
   } else {
@@ -411,12 +416,10 @@ void communicateWithAnchor(uint64_t dest_addr) {
   }
 
   /* 거리 측정 교환 간에 딜레이를 실행 */
-  Sleep(RNG_DELAY_MS);
+  Sleep(rangeDelay);
 }
 
-void setup() {
-  UART_init();
-
+void initUWB() {
   /* SPI 속도 설정, DW3000은 최대 38 MHz 지원 */
   /* DW IC 초기화 */
   spiBegin(PIN_IRQ, PIN_RST);
@@ -480,8 +483,10 @@ void setup() {
   aes_job_rx.header_len = aes_job_tx.header_len;
   aes_job_rx.header = aes_job_tx.header; /* 암호화되지 않는 평문 헤더 */
   aes_job_rx.payload = rx_buffer;        /* IC에서 읽어와 복호화된 데이터를 저장할 위치의 포인터 */
+}
 
-  BLEDevice::init("UWB TAG1");
+void initBLE() {
+  BLEDevice::init("UWB TAG23");
   BLEServer* pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallback());
   BLEService* pService = pServer->createService(SERVICE_UUID);
@@ -489,15 +494,11 @@ void setup() {
     CHARACTERISTIC_UUID,
     BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
 
-  //pCharacteristic->setValue("Hello World says Neil");
-
   pCharacteristic->addDescriptor(new BLE2902());
   pCharacteristic->setCallbacks(new CharacteristicCallback());
-
   pService->start();
 
   // BLE 광고 설정
-  // BLEAdvertising *pAdvertising = pServer->getAdvertising();  // this still is working for backward compatibility
   BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->setScanResponse(true);
@@ -514,16 +515,44 @@ void setup() {
   pBLEScan->setActiveScan(true);  // 추가 Response를 받기 위해서 ActiveScan을 활성화(= 장치이름, UUID, 등을 추가로 더 받는다는 뜻)
 }
 
+void setup() {
+  UART_init();
+  initUWB();
+  initBLE();
+}
+
 void loop() {
   unsigned long currentMillis = millis();
 
   // 3초(3000ms)마다 스캔 수행
   if (currentMillis - lastScanTime >= 10000) {
+    filteredDeviceCount = 0;
     lastScanTime = currentMillis;
     pBLEScan->start(3, false);  // 3초 동안 스캔 (false = 비동기)
   }
 
-  communicateWithAnchor(anchorDestAddress);
+  // 저장된 필터링된 주소 리스트에서 처음 3개와 순차 통신
+  for (int i = 0; i < 3; i++) {
+    // 이름이 존재하고 "0x"로 시작하며 길이가 정확히 18자인 경우만 처리
+    if (strncmp(filteredDeviceNames[i], "0x", 2) == 0 && strlen(filteredDeviceNames[i]) == 18) {
+      uint64_t address = strtoull(filteredDeviceNames[i], NULL, 16);
+      communicateWithAnchor(address);
+      distanceAVG[i] += distance;
+    }
+  }
+
+  avgCount++;
+  if (avgCount % 10 == 0) {
+    char buffer[50];
+
+    for (int j = 0; j < 3; j++) {
+      double distanceTotal = distanceAVG[j] / 10.0;
+      sprintf(buffer, "Tag%d Distance: %.2fm", j + 1, distanceTotal); // 디버그용
+      Serial.println(buffer);                                         // 디버그용
+      distanceAVG[j] = 0.0;
+    }
+    delay(1000);                                                      // 디버그용
+  }
 }
 
 

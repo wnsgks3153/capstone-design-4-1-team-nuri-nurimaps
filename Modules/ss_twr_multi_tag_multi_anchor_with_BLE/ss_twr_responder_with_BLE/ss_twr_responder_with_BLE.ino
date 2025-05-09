@@ -53,8 +53,8 @@ static dwt_aes_config_t aes_config = {
   추출된 태그의 주소를 DEST_ADDR 변수에 저장되도록 변경 */
 
 #define DEST_PAN_ID 0x4321          /* PAN ID (네트워크 식별자) */
-#define SRC_ADDR 0x1122334455667781 /* 이니시에이터(발신기) 주소 */
-static uint64_t DEST_ADDR = 0;      /* 리스폰더(응답기) 주소 */
+#define SRC_ADDR 0x0200300100300030 /* 이니시에이터(발신기) 주소 */
+static uint64_t DEST_ADDR;      /* 리스폰더(응답기) 주소 */
 #define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb54831-36e1-4688-b7f5-ea07361b26a8"
 
@@ -132,98 +132,7 @@ dwt_aes_job_t aes_job_rx, aes_job_tx;  // AES 암호화/복호화 작업 구조�
 int8_t status;                         // 현재 상태 변수
 uint32_t status_reg;                   // DW3000 상태 레지스터 값
 
-void setup() {
-  UART_init();
-  Serial.println(APP_NAME);
-
-  /* SPI 속도 설정, DW3000은 최대 38MHz까지 지원 */
-  /* DW IC(집적회로) 리셋 */
-  spiBegin(PIN_IRQ, PIN_RST);
-  spiSelect(PIN_SS);
-
-  delay(2);  // DW3000이 시작할 시간을 제공 (INIT_RC에서 IDLE_RC로 전환되는 시간, 또는 SPIRDY 이벤트를 기다릴 수도 있음)
-
-  while (!dwt_checkidlerc())  // DW IC가 IDLE_RC 상태인지 확인한 후 진행해야 함
-  {
-    UART_puts("IDLE FAILED\r\n");
-    Serial.println("IDLE FAILED");
-    while (1)
-      ;
-  }
-
-  if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR) {
-    UART_puts("INIT FAILED\r\n");
-    Serial.println("INIT FAILED");
-    while (1)
-      ;
-  }
-
-  /* 디버깅을 위해 LED를 활성화하여 TX 시 DW3000 평가 보드의 D1 LED(빨간색)가 깜박이도록 설정  
-     * 단, 저전력 애플리케이션에서는 LED를 사용하지 않는 것이 좋음. */
-  dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
-
-  /* DW IC(집적회로) 구성. 아래 NOTE 13을 참고하세요. */
-  if (dwt_configure(&config)) /* dwt_configure가 DWT_ERROR를 반환하면 PLL 또는 RX 보정이 실패한 것이므로  
-                                 * 호스트는 장치를 리셋해야 함. */
-  {
-    test_run_info((unsigned char *)"CONFIG FAILED     ");
-    Serial.println("CONFIG FAILED");
-    while (1) {};
-  }
-
-  /* TX 스펙트럼 매개변수(출력 전력, PG 지연 및 PG 카운트) 구성 */
-  dwt_configuretxrf(&txconfig_options);
-
-  /* 기본 안테나 지연 값 적용. 아래 NOTE 2를 참고하세요. */
-  dwt_setrxantennadelay(RX_ANT_DLY);
-  dwt_settxantennadelay(TX_ANT_DLY);
-
-  /* GPIO 5 및 6에서 TX/RX 상태 출력을 활성화하여 디버깅을 돕고, TX/RX LED도 활성화 가능  
-     * 단, 저전력 애플리케이션에서는 LED를 사용하지 않는 것이 좋음. */
-  dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
-
-
-
-  /* TX 및 RX AES 작업을 구성합니다.  
-     * TX 작업은 응답(Response) 메시지를 암호화하는 데 사용되며,  
-     * RX 작업은 폴(Poll) 메시지를 복호화하는 데 사용됩니다. */
-
-  aes_job_rx.mode = AES_Decrypt;                               /* 모드를 복호화(Decryption)로 설정 */
-  aes_job_rx.src_port = AES_Src_Rx_buf_0;                      /* RX 버퍼에서 암호화된 프레임을 가져옴 */
-  aes_job_rx.dst_port = AES_Dst_Rx_buf_0;                      /* 복호화된 프레임을 동일한 RX 버퍼에 저장 (원본 RX 프레임이 덮어쓰기됨) */
-  aes_job_rx.header_len = MAC_FRAME_HEADER_SIZE(&mac_frame);   /* MAC 헤더 길이 설정 (mac_frame에는 MAC 헤더가 포함됨) */
-  aes_job_rx.header = (uint8_t *)MHR_802_15_4_PTR(&mac_frame); /* 암호화되지 않을 평문 헤더의 포인터 설정 */
-  aes_job_rx.payload = rx_buffer;                              /* 복호화된 RX MAC 프레임 페이로드를 IC에서 읽어와 저장할 버퍼 */
-
-  aes_job_tx.mode = AES_Encrypt;        /* 암호화(Encryption) 작업 설정 */
-  aes_job_tx.src_port = AES_Src_Tx_buf; /* dwt_do_aes가 평문을 TX 버퍼로 가져옴 */
-  aes_job_tx.dst_port = AES_Dst_Tx_buf; /* dwt_do_aes가 원본 평문 TX 버퍼를 암호화된 데이터로 대체 */
-  aes_job_tx.header_len = aes_job_rx.header_len;
-  aes_job_tx.header = aes_job_rx.header;        /* 암호화되지 않을 평문 헤더 */
-  aes_job_tx.payload = tx_resp_msg;             /* 전송할 페이로드 */
-  aes_job_tx.payload_len = sizeof(tx_resp_msg); /* 페이로드 길이 */
-
-  BLEDevice::init("0x1122334455667781");
-  BLEServer *pServer = BLEDevice::createServer();
-  BLEService *pService = pServer->createService(SERVICE_UUID);
-  BLECharacteristic *pCharacteristic = pService->createCharacteristic(
-    CHARACTERISTIC_UUID,
-    BLECharacteristic::PROPERTY_READ | 
-    BLECharacteristic::PROPERTY_WRITE
-    );
-
-  // pCharacteristic->setValue("0x8877665544332211");
-  pService->start();
-  // BLEAdvertising *pAdvertising = pServer->getAdvertising();  // this still is working for backward compatibility
-  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
-  pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
-  pAdvertising->setMinPreferred(0x12);
-  BLEDevice::startAdvertising();
-}
-
-void loop() {
+void communicateWithTag() {
   /* 즉시 수신 활성화 */
   dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
@@ -264,7 +173,6 @@ void loop() {
     status = 0;  // 에러 감지 후 무한 에러 출력 방지를 위한 상태 초기화
     status = rx_aes_802_15_4(&mac_frame, frame_len, &aes_job_rx, sizeof(rx_buffer),
                              keys_options, DEST_ADDR, SRC_ADDR, &aes_config);
-
 
     /* 오류 발생 시 처리 
        기존 예제 코드는 에러가 발생하는 경우 무한으로 에러 상태를 출력하도록 설정되어있음
@@ -379,6 +287,105 @@ void loop() {
     /* DW IC 상태 레지스터에서 RX 오류 이벤트를 클리어. */
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_ERR);
   }
+}
+void initUWB() {
+  Serial.println(APP_NAME);
+
+  /* SPI 속도 설정, DW3000은 최대 38MHz까지 지원 */
+  /* DW IC(집적회로) 리셋 */
+  spiBegin(PIN_IRQ, PIN_RST);
+  spiSelect(PIN_SS);
+
+  delay(2);  // DW3000이 시작할 시간을 제공 (INIT_RC에서 IDLE_RC로 전환되는 시간, 또는 SPIRDY 이벤트를 기다릴 수도 있음)
+
+  while (!dwt_checkidlerc())  // DW IC가 IDLE_RC 상태인지 확인한 후 진행해야 함
+  {
+    UART_puts("IDLE FAILED\r\n");
+    Serial.println("IDLE FAILED");
+    while (1)
+      ;
+  }
+
+  if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR) {
+    UART_puts("INIT FAILED\r\n");
+    Serial.println("INIT FAILED");
+    while (1)
+      ;
+  }
+
+  /* 디버깅을 위해 LED를 활성화하여 TX 시 DW3000 평가 보드의 D1 LED(빨간색)가 깜박이도록 설정  
+     * 단, 저전력 애플리케이션에서는 LED를 사용하지 않는 것이 좋음. */
+  dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
+
+  /* DW IC(집적회로) 구성. 아래 NOTE 13을 참고하세요. */
+  if (dwt_configure(&config)) /* dwt_configure가 DWT_ERROR를 반환하면 PLL 또는 RX 보정이 실패한 것이므로  
+                                 * 호스트는 장치를 리셋해야 함. */
+  {
+    test_run_info((unsigned char *)"CONFIG FAILED     ");
+    Serial.println("CONFIG FAILED");
+    while (1) {};
+  }
+
+  /* TX 스펙트럼 매개변수(출력 전력, PG 지연 및 PG 카운트) 구성 */
+  dwt_configuretxrf(&txconfig_options);
+
+  /* 기본 안테나 지연 값 적용. 아래 NOTE 2를 참고하세요. */
+  dwt_setrxantennadelay(RX_ANT_DLY);
+  dwt_settxantennadelay(TX_ANT_DLY);
+
+  /* GPIO 5 및 6에서 TX/RX 상태 출력을 활성화하여 디버깅을 돕고, TX/RX LED도 활성화 가능  
+     * 단, 저전력 애플리케이션에서는 LED를 사용하지 않는 것이 좋음. */
+  dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
+
+  /* TX 및 RX AES 작업을 구성합니다.  
+     * TX 작업은 응답(Response) 메시지를 암호화하는 데 사용되며,  
+     * RX 작업은 폴(Poll) 메시지를 복호화하는 데 사용됩니다. */
+
+  aes_job_rx.mode = AES_Decrypt;                               /* 모드를 복호화(Decryption)로 설정 */
+  aes_job_rx.src_port = AES_Src_Rx_buf_0;                      /* RX 버퍼에서 암호화된 프레임을 가져옴 */
+  aes_job_rx.dst_port = AES_Dst_Rx_buf_0;                      /* 복호화된 프레임을 동일한 RX 버퍼에 저장 (원본 RX 프레임이 덮어쓰기됨) */
+  aes_job_rx.header_len = MAC_FRAME_HEADER_SIZE(&mac_frame);   /* MAC 헤더 길이 설정 (mac_frame에는 MAC 헤더가 포함됨) */
+  aes_job_rx.header = (uint8_t *)MHR_802_15_4_PTR(&mac_frame); /* 암호화되지 않을 평문 헤더의 포인터 설정 */
+  aes_job_rx.payload = rx_buffer;                              /* 복호화된 RX MAC 프레임 페이로드를 IC에서 읽어와 저장할 버퍼 */
+
+  aes_job_tx.mode = AES_Encrypt;        /* 암호화(Encryption) 작업 설정 */
+  aes_job_tx.src_port = AES_Src_Tx_buf; /* dwt_do_aes가 평문을 TX 버퍼로 가져옴 */
+  aes_job_tx.dst_port = AES_Dst_Tx_buf; /* dwt_do_aes가 원본 평문 TX 버퍼를 암호화된 데이터로 대체 */
+  aes_job_tx.header_len = aes_job_rx.header_len;
+  aes_job_tx.header = aes_job_rx.header;        /* 암호화되지 않을 평문 헤더 */
+  aes_job_tx.payload = tx_resp_msg;             /* 전송할 페이로드 */
+  aes_job_tx.payload_len = sizeof(tx_resp_msg); /* 페이로드 길이 */
+}
+
+void initBLE() {
+  char addr_str[19];                         // "0x" + 16자리 16진수 + null
+  sprintf(addr_str, "0x%016llX", SRC_ADDR);  // 또는 "0x%016llx" (소문자)
+  BLEDevice::init(addr_str);
+  BLEServer *pServer = BLEDevice::createServer();
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+  BLECharacteristic *pCharacteristic = pService->createCharacteristic(
+    CHARACTERISTIC_UUID,
+    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+
+  // pCharacteristic->setValue("0x8877665544332211");
+  pService->start();
+  // BLEAdvertising *pAdvertising = pServer->getAdvertising();  // this still is working for backward compatibility
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
+  pAdvertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+}
+
+void setup() {
+  UART_init();
+  initUWB();
+  initBLE();
+}
+
+void loop() {
+  communicateWithTag();
 }
 
 /*****************************************************************************************************************************************************
