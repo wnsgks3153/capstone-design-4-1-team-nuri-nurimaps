@@ -78,33 +78,11 @@ static dwt_aes_config_t aes_config = {
   AES_Encrypt
 };
 
-#define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-
-// 연결하려는 원격 서비스
-//static BLEUUID serviceUUID("4fafc201-1fb5-459e-8fcc-c5c9c331914b");
-static BLEUUID serviceUUID("a3aa");
-static BLEUUID charUUID("d368");
-// 원격 서비스에서 관심 있는 특성
-//static BLEUUID    charUUID("beb5483e-36e1-4688-b7f5-ea07361b26a8");
-
-/* Initiator(발신자) 데이터 
-  이전에는 계속해서 테스트 중이라 앵커의 주소를 하드코딩하여 사용
-
-  #define DEST_ADDR1 0x1122334455667781 /* Responder1(수신자)의 주소
-  #define DEST_ADDR2 0x1122334455667782 /* Responder2(수신자)의 주소
-*/
+/* Initiator(발신자) 데이터 */
 #define DEST_PAN_ID 0x4321          /* 이 예제에서 사용되는 PAN ID */
 #define SRC_ADDR 0x8877665544332211 /* Initiator(발신자)의 주소 */
-static uint64_t anchorDestAddress;  /* Responder(수신자)의 주소 */
+static uint64_t DEST_ADDR;          /* Responder(수신자)의 주소 */
 
-static BLERemoteCharacteristic* pRemoteCharacteristic;
-static BLEAdvertisedDevice* myDevice;
-
-BLECharacteristic* pCharacteristic;
-BLEScan* pBLEScan;
-
-bool deviceConnected = false;
 unsigned long lastScanTime = 0;  // 마지막 스캔 시각
 
 /* 기본 통신 구성. 기본 비-STS DW 모드를 사용함. */
@@ -137,13 +115,6 @@ static dwt_aes_key_t keys_options[NUM_OF_KEY_OPTIONS] = {
   { 0x00010101, 0x00010101, 0x00010101, 0x00010101, 0x00000000, 0x00000000, 0x00000000, 0x00000000 },
   { 0x00010101, 0x00010101, 0x00010101, 0x00010101, 0x00000000, 0x00000000, 0x00000000, 0x00000000 }
 };
-
-/* 거리 측정 간 딜레이 기간(단위: 밀리초) */
-float rangeDelay;
-int conversionMS = -10000000; //clockoffset에 conversionMS를 곱하여 딜레이용 시간으로 변환하기위한 변수
-
-double distanceAVG[3] = {0}; // 오차를 줄이기 위한 평균 계산용 소수 배열 변수
-int avgCount;
 
 /* 64 MHz PRF에 대한 기본 안테나 지연 값. 아래 참고 사항 2 참조. */
 #define TX_ANT_DLY 16385
@@ -180,6 +151,8 @@ static uint8_t rx_buffer[RX_BUF_LEN];
 /* 계산된 비행 시간(Time of Flight, ToF)과 거리 값을 저장하여 디버그 시점에서 참조할 수 있도록 함. */
 static double tof;
 static double distance;
+static double distanceSUM[3] = { 0 };  // 오차를 줄이기 위한 평균 계산용 소수 배열 변수
+double distanceAVG;                    // 오차를 줄이기 위한 평균 계산용 소수 배열 변수
 
 /* PG_DELAY 및 TX_POWER 레지스터의 값은 현재 온도에서 대역폭과 스펙트럼 전력을 반영함.
  * 이러한 값은 기준 측정을 수행하기 전에 보정할 수 있음. 아래 참고 사항 2 참조. */
@@ -191,6 +164,25 @@ uint32_t status_reg;
 uint8_t nonce[13]; /* IEEE 802.15.4 규격에 따라 사용되는 13바이트 nonce */
 dwt_aes_job_t aes_job_tx, aes_job_rx;
 int8_t status;
+
+#define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"         // BLE SERVIECE UUID       - 별도의 서비스 ID를 부여하고 싶은 경우 변경
+#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"  // BLE CHARICTERISTIC UUID - 별도의 서비스 ID를 부여하고 싶은 경우 변경
+
+// 연결하려는 원격 서비스
+//static BLEUUID serviceUUID("4fafc201-1fb5-459e-8fcc-c5c9c331914b");
+static BLEUUID serviceUUID("a3aa");
+static BLEUUID charUUID("d368");
+// 원격 서비스에서 관심 있는 특성
+//static BLEUUID    charUUID("beb5483e-36e1-4688-b7f5-ea07361b26a8");
+
+static BLERemoteCharacteristic* pRemoteCharacteristic;
+static BLEAdvertisedDevice* myDevice;
+
+BLECharacteristic* pCharacteristic;
+BLEScan* pBLEScan;
+
+char bleMessage[50];
+bool deviceConnected = false;  // 장치 연결 여부 플래그
 
 // BLE 서버에 연결/해제 시 호출되는 콜백 클래스
 class MyServerCallback : public BLEServerCallbacks {
@@ -234,6 +226,7 @@ class CharacteristicCallback : public BLECharacteristicCallbacks {
 #define MAX_NAME_LEN 30
 
 char filteredDeviceNames[MAX_DEVICES][MAX_NAME_LEN];  // 필터링된 이름 저장용 배열
+int anchorIds[MAX_DEVICES];                           // 어떤 앵커와 통신했는지 기록하는 배열
 int filteredDeviceCount = 0;
 
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
@@ -241,15 +234,30 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
 
     uint8_t* addr = (uint8_t*)advertisedDevice.getAddress().getNative();
 
+    /* 이전에 사용하던 장치들의 MAC 주소는 AC:15:18로 시작됬음, 새로운 장치가 다른 주소를 사용하는 경우 변경할 예정 */
     if (addr[0] == 0xAC && addr[1] == 0x15 && addr[2] == 0x18) {
-      Serial.print("UWB Anchor Device found: ");
-      Serial.println(advertisedDevice.toString().c_str());
+      Serial.print("UWB Anchor Device found: ");            // 디버그용
+      Serial.println(advertisedDevice.toString().c_str());  // 디버그용
 
-      // 장치 이름이 "0x02"로 시작하고 길이가 정확히 18인지 확인
-      String nameStr = advertisedDevice.getName();  // 안전하게 String 객체로 저장
+      /* 장치 이름이 "0x02"로 시작하고 길이가 정확히 18인지 확인
+       * [0-1]  분류: 태그(01), 앵커(02), 마스터앵커(03, 마스터 앵커는 필요 시 구현 예정) 
+       * [2-4]  순번: 001 ~ 099로 각 장치에 번호를 부여
+       * [5-7]  위치: 복도(001), 계단(002)
+       * [8-15] 층수: 3층(00300030), 4층(00400040), 3.5층(00350035)
+       * 이상하거나, 맘에안들거나, 개선하고싶다면 언제든지 제안할 것.
+       */
+
+      String nameStr = advertisedDevice.getName();
       if (nameStr.startsWith("0x02") && nameStr.length() == 18) {
         if (filteredDeviceCount < MAX_DEVICES) {
-          nameStr.toCharArray(filteredDeviceNames[filteredDeviceCount], MAX_NAME_LEN);  // 문자열 복사
+          // 이름 저장
+          nameStr.toCharArray(filteredDeviceNames[filteredDeviceCount], MAX_NAME_LEN);
+
+          // 앵커 순번 추출: 4~6번째 인덱스 -> substring(4, 7)
+          String anchorIdStr = nameStr.substring(5, 7);  // "03" 같은 부분 추출
+          int anchorId = anchorIdStr.toInt();            // 정수로 변환하여 저장
+          anchorIds[filteredDeviceCount] = anchorId;
+
           filteredDeviceCount++;
         }
       }
@@ -266,157 +274,145 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
    이 함수를 사용할 때 미리 ESP32를 통해 UWB 앵커 주소를 받은 다음 앵커의 주소를 메서드로 넣어 호출만 하면 됨
    하단 loop() 부분을 참고
 */
-char txString[50];
+float rangeDelay;              // 거리 측정 간 딜레이 기간(단위: 밀리초)
+int conversionMS = -10000000;  // clockoffset에 conversionMS를 곱하여 딜레이용 시간으로 변환하기위한 변수
 
-void communicateWithAnchor(uint64_t dest_addr) {
-  /* 사용할 올바른 키를 설정 */
-  dwt_set_keyreg_128(&keys_options[INITIATOR_KEY_INDEX - 1]);
-  /* 프레임에 사용할 키 인덱스 설정 */
-  MAC_FRAME_AUX_KEY_IDENTIFY_802_15_4(&mac_frame) = INITIATOR_KEY_INDEX;
+void communicateWithAnchors() {
+  for (int i = 0; i < 5; i++) {    // 5번을 측정하여 평균을 계산하여 오차를 보정(성능 저하가 생기는 경우 변경 예정)
+    for (int j = 0; j < 3; j++) {  // 앵커 리스트에서 차례대로 3개의 주소를 꺼내와 통신
+      if (strncmp(filteredDeviceNames[j], "0x", 2) == 0 && strlen(filteredDeviceNames[j]) == 18) {
 
-  /* MHR을 올바른 SRC 및 DEST 주소로 업데이트하고 13바이트 nonce를 생성
+        uint64_t DEST_ADDR = strtoull(filteredDeviceNames[j], NULL, 16);
+
+        /* 사용할 올바른 키를 설정 */
+        dwt_set_keyreg_128(&keys_options[INITIATOR_KEY_INDEX - 1]);
+        /* 프레임에 사용할 키 인덱스 설정 */
+        MAC_FRAME_AUX_KEY_IDENTIFY_802_15_4(&mac_frame) = INITIATOR_KEY_INDEX;
+
+        /* MHR을 올바른 SRC 및 DEST 주소로 업데이트하고 13바이트 nonce를 생성
          * (같은 MAC 프레임 구조가 수신된 데이터와 전송된 데이터를 모두 저장하는 데 사용되므로,
          * 전송 전에 SRC 및 DEST 주소를 업데이트해야 함) */
-  mac_frame_set_pan_ids_and_addresses_802_15_4(&mac_frame, DEST_PAN_ID, dest_addr, SRC_ADDR);
-  mac_frame_get_nonce(&mac_frame, nonce);
+        mac_frame_set_pan_ids_and_addresses_802_15_4(&mac_frame, DEST_PAN_ID, DEST_ADDR, SRC_ADDR);
+        mac_frame_get_nonce(&mac_frame, nonce);
+        aes_job_tx.mic_size = mac_frame_get_aux_mic_size(&mac_frame);
+        aes_config.mode = AES_Encrypt;
+        aes_config.mic = dwt_mic_size_from_bytes(aes_job_tx.mic_size);
+        dwt_configure_aes(&aes_config);
 
-  aes_job_tx.mic_size = mac_frame_get_aux_mic_size(&mac_frame);
-  aes_config.mode = AES_Encrypt;
-  aes_config.mic = dwt_mic_size_from_bytes(aes_job_tx.mic_size);
-  dwt_configure_aes(&aes_config);
+        /* AES 작업이 TX 프레임 데이터를 가져와 DW IC TX 버퍼에 복사한 후 전송함. 아래 참고 사항 7 참조. 
+         * 이 부분은 아직 오류가 발생한 적이 없기 때문에 무한 오류가 출력되는 부분을 변경하는 것은 보류
+         * 예외가 발생하는 경우 통신 불가능 상태로 변하는 것을 막기 위해 수정할 예정
+         */
+        status = dwt_do_aes(&aes_job_tx, aes_config.aes_core_type);
+        /* 오류 검사 */
+        if (status < 0) {
+          test_run_info((unsigned char*)"AES length error");
+          while (1)
+            ; /* 오류 발생 */
+        } else if (status & AES_ERRORS) {
+          test_run_info((unsigned char*)"ERROR AES");
+          while (1)
+            ; /* 오류 발생 */
+        }
 
-  /* AES 작업이 TX 프레임 데이터를 가져와 DW IC TX 버퍼에 복사한 후 전송함. 아래 참고 사항 7 참조. 
-     이 부분은 아직 오류가 발생한 적이 없기 때문에 무한 오류가 출력되는 부분을 변경하는 것은 보류
-     예외가 발생하는 경우 통신 불가능 상태로 변하는 것을 막기 위해 수정할 예정*/
-  status = dwt_do_aes(&aes_job_tx, aes_config.aes_core_type);
-  /* 오류 검사 */
-  if (status < 0) {
-    test_run_info((unsigned char*)"AES length error");
-    while (1)
-      ; /* 오류 발생 */
-  } else if (status & AES_ERRORS) {
-    test_run_info((unsigned char*)"ERROR AES");
-    while (1)
-      ; /* 오류 발생 */
-  }
+        /* 프레임 컨트롤을 설정하고 전송 시작 */
+        dwt_writetxfctrl(aes_job_tx.header_len + aes_job_tx.payload_len + aes_job_tx.mic_size + FCS_LEN, 0, 1); /* TX 버퍼 오프셋 0, ranging 사용. */
 
-  /* 프레임 컨트롤을 설정하고 전송 시작 */
-  dwt_writetxfctrl(aes_job_tx.header_len + aes_job_tx.payload_len + aes_job_tx.mic_size + FCS_LEN, 0, 1); /* TX 버퍼 오프셋 0, ranging 사용. */
+        /* 전송 시작, 응답이 예상됨을 나타내므로 프레임 전송 후 설정된 지연(dwt_setrxaftertxdelay()로 설정됨)이 경과하면 자동으로 수신이 활성화됨. */
+        dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
 
-  /* 전송 시작, 응답이 예상됨을 나타내므로 프레임 전송 후 설정된 지연(dwt_setrxaftertxdelay()로 설정됨)이 경과하면 자동으로 수신이 활성화됨. */
-  dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+        /* 전송이 올바르게 수행되었다고 가정하고, 프레임 수신 또는 오류/타임아웃을 폴링. 아래 참고 사항 8 참조. */
+        while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {};
 
-  /* 전송이 올바르게 수행되었다고 가정하고, 프레임 수신 또는 오류/타임아웃을 폴링. 아래 참고 사항 8 참조. */
-  while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {};
+        /* Poll 메시지 전송 후 프레임 시퀀스 번호(256 모듈로) 및 프레임 카운터 증가 */
+        MAC_FRAME_SEQ_NUM_802_15_4(&mac_frame) = ++seq_cnt;
+        mac_frame_update_aux_frame_cnt(&mac_frame, ++frame_cnt);
 
-  /* Poll 메시지 전송 후 프레임 시퀀스 번호(256 모듈로) 및 프레임 카운터 증가 */
-  MAC_FRAME_SEQ_NUM_802_15_4(&mac_frame) = ++seq_cnt;
-  mac_frame_update_aux_frame_cnt(&mac_frame, ++frame_cnt);
+        if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) { /* 응답을 수신함 */
+          uint32_t frame_len;
 
-  if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) { /* 응답을 수신함 */
-    uint32_t frame_len;
+          /* DW IC 상태 레지스터에서 정상적인 RX 프레임 이벤트를 클리어 */
+          dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
 
-    /* DW IC 상태 레지스터에서 정상적인 RX 프레임 이벤트를 클리어 */
-    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
+          /* 수신된 데이터 길이를 읽음 */
+          frame_len = dwt_read32bitreg(RX_FINFO_ID) & RXFLEN_MASK;
 
-    /* 수신된 데이터 길이를 읽음 */
-    frame_len = dwt_read32bitreg(RX_FINFO_ID) & RXFLEN_MASK;
+          /* 프레임을 수신했으므로, 먼저 MHR을 읽고 기대한 프레임인지 확인해야 함:
+           * 대상 주소는 소스 주소와 일치해야 함 (이 확인을 위해 프레임 필터링을 설정할 수도 있으나,
+           * 이 예제에서는 다루지 않음); 또한 헤더에 보안이 활성화되어 있어야 함.
+           * 이러한 검사 중 하나라도 실패하면 rx_aes_802_15_4는 오류를 반환함. 
+           */
 
-    /* 프레임을 수신했으므로, 먼저 MHR을 읽고 기대한 프레임인지 확인해야 함:
-     * 대상 주소는 소스 주소와 일치해야 함 (이 확인을 위해 프레임 필터링을 설정할 수도 있으나,
-     * 이 예제에서는 다루지 않음); 또한 헤더에 보안이 활성화되어 있어야 함.
-     * 이러한 검사 중 하나라도 실패하면 rx_aes_802_15_4는 오류를 반환함.
-     */
-    aes_config.mode = AES_Decrypt;
-    PAYLOAD_PTR_802_15_4(&mac_frame) = rx_buffer; /* MAC 페이로드 포인터 설정 */
+          aes_config.mode = AES_Decrypt;
+          PAYLOAD_PTR_802_15_4(&mac_frame) = rx_buffer; /* MAC 페이로드 포인터 설정 */
 
-    /* 이 예제에서는 Initiator와 Responder가 암호화된 데이터를 전송한다고 가정함 */
-    status = rx_aes_802_15_4(&mac_frame, frame_len, &aes_job_rx, sizeof(rx_buffer), keys_options, dest_addr, SRC_ADDR, &aes_config);
+          /* 이 예제에서는 Initiator와 Responder가 암호화된 데이터를 전송한다고 가정함 */
+          status = rx_aes_802_15_4(&mac_frame, frame_len, &aes_job_rx, sizeof(rx_buffer), keys_options, DEST_ADDR, SRC_ADDR, &aes_config);
 
-    /* 오류 발생 시 처리 
-       기존 예제 코드는 에러가 발생하는 경우 무한으로 에러 상태를 출력하도록 설정되어있음
-       에러를 무한 출력하며, 통신 불가능 상태가 되는 while문 제거 및 본인(이 코드를 사용하는 태그)을 향한 메세지가 아니면 
-       메세지를 무시하고 다시 메세지를 받는 상태로 변환되도록 return으로 설정 변경
-    */
-    if (status != AES_RES_OK) {
+          /* 오류 발생 시 처리 
+           * 기존 예제 코드는 에러가 발생하는 경우 무한으로 에러 상태를 출력하도록 설정되어있음
+           * 에러를 무한 출력하며, 통신 불가능 상태가 되는 while문 제거 및 본인(이 코드를 사용하는 태그)을 향한 메세지가 아니면 
+           * 메세지를 무시하고 다시 메세지를 받는 상태로 변환되도록 return으로 설정 변경
+           */
+          if (status != AES_RES_OK) {
+            switch (status) {
+              case AES_RES_ERROR_LENGTH:
+                Serial.println("AES 길이 오류");
+                break;
+              case AES_RES_ERROR:
+                Serial.println("AES 오류");
+                break;
+              case AES_RES_ERROR_FRAME:
+                Serial.println("프레임 오류");
+                break;
+              case AES_RES_ERROR_IGNORE_FRAME:
+                Serial.println("해당 프레임은 대상이 아님");
+                break;  // 잘못된 목적지 주소를 가진 프레임 무시
+            }
+            delay(100);
+            return;
+          }
 
-      switch (status) {
-        case AES_RES_ERROR_LENGTH:
-          Serial.println("AES 길이 오류");
-          break;
-        case AES_RES_ERROR:
-          Serial.println("AES 오류");
-          break;
-        case AES_RES_ERROR_FRAME:
-          Serial.println("프레임 오류");
-          break;
-        case AES_RES_ERROR_IGNORE_FRAME:
-          Serial.println("해당 프레임은 대상이 아님");
-
-          /* 프레임 에러 시 디버그용 코드
-          Serial.print("Frame Cnt: ");
-          Serial.println(mac_frame_get_aux_frame_cnt(&mac_frame));
-          Serial.print("Status: ");
-          Serial.println(status);  // AES result
-          Serial.print("DW3000 Reg Status: ");
-          Serial.println(dwt_read32bitreg(SYS_STATUS_ID), HEX);
-          */
-
-          break;  // 잘못된 목적지 주소를 가진 프레임 무시
-      }
-      delay(100);
-      return;
-    }
-
-    /* 프레임이 예상된 응답인지 확인 ("SS TWR AES responder" 예제에서의 응답).
+          /* 프레임이 예상된 응답인지 확인 ("SS TWR AES responder" 예제에서의 응답).
              * 응답 메시지의 처음 8바이트는 Poll과 Response 타임스탬프를 포함하므로 이를 무시 */
-    if (memcmp(&rx_buffer[START_RECEIVE_DATA_LOCATION], &rx_resp_msg[START_RECEIVE_DATA_LOCATION],
-               aes_job_rx.payload_len - START_RECEIVE_DATA_LOCATION)
-        == 0) {
-      uint32_t poll_tx_ts, resp_rx_ts, poll_rx_ts, resp_tx_ts;
-      int32_t rtd_init, rtd_resp;
-      float clockOffsetRatio;
+          if (memcmp(&rx_buffer[START_RECEIVE_DATA_LOCATION], &rx_resp_msg[START_RECEIVE_DATA_LOCATION], aes_job_rx.payload_len - START_RECEIVE_DATA_LOCATION) == 0) {
+            uint32_t poll_tx_ts, resp_rx_ts, poll_rx_ts, resp_tx_ts;
+            int32_t rtd_init, rtd_resp;
+            float clockOffsetRatio;
 
-      /* Poll 전송 및 응답 수신 타임스탬프를 읽어옴. 아래의 NOTE 9 참조. */
-      poll_tx_ts = dwt_readtxtimestamplo32();
-      resp_rx_ts = dwt_readrxtimestamplo32();
+            /* Poll 전송 및 응답 수신 타임스탬프를 읽어옴. 아래의 NOTE 9 참조. */
+            poll_tx_ts = dwt_readtxtimestamplo32();
+            resp_rx_ts = dwt_readrxtimestamplo32();
 
-      /* 캐리어 적분기 값을 읽어와서 클록 오프셋 비율을 계산. 아래의 NOTE 11 참조. */
-      clockOffsetRatio = ((float)dwt_readclockoffset()) / (uint32_t)(1 << 26);
-      Serial.println(clockOffsetRatio, 8);
+            /* 캐리어 적분기 값을 읽어와서 클록 오프셋 비율을 계산. 아래의 NOTE 11 참조. */
+            clockOffsetRatio = ((float)dwt_readclockoffset()) / (uint32_t)(1 << 26);
 
-      /* 응답 메시지에서 타임스탬프를 가져옴. */
-      resp_msg_get_ts(&rx_buffer[RESP_MSG_POLL_RX_TS_IDX], &poll_rx_ts);
-      resp_msg_get_ts(&rx_buffer[RESP_MSG_RESP_TX_TS_IDX], &resp_tx_ts);
+            /* 응답 메시지에서 타임스탬프를 가져옴. */
+            resp_msg_get_ts(&rx_buffer[RESP_MSG_POLL_RX_TS_IDX], &poll_rx_ts);
+            resp_msg_get_ts(&rx_buffer[RESP_MSG_RESP_TX_TS_IDX], &resp_tx_ts);
 
-      /* 비행 시간(time of flight)과 거리를 계산, 로컬과 원격 클록 속도의 차이를 보정하기 위해 클록 오프셋 비율을 사용 */
-      rtd_init = resp_rx_ts - poll_tx_ts;
-      rtd_resp = resp_tx_ts - poll_rx_ts;
+            /* 비행 시간(time of flight)과 거리를 계산, 로컬과 원격 클록 속도의 차이를 보정하기 위해 클록 오프셋 비율을 사용 */
+            rtd_init = resp_rx_ts - poll_tx_ts;
+            rtd_resp = resp_tx_ts - poll_rx_ts;
 
-      tof = ((rtd_init - rtd_resp * (1 - clockOffsetRatio)) / 2.0) * DWT_TIME_UNITS;
-      distance = tof * SPEED_OF_LIGHT;
+            tof = ((rtd_init - rtd_resp * (1 - clockOffsetRatio)) / 2.0) * DWT_TIME_UNITS;
+            distance = tof * SPEED_OF_LIGHT;
 
+            distanceSUM[j] += distance;
 
-      // 디버그용 시리얼 출력부분
-      sprintf(txString, "%.2fm", distance);
-      Serial.print(dest_addr);
-      Serial.print(" = Dist : ");
-      Serial.print(distance, 2);
-      Serial.println("m");
+            rangeDelay = clockOffsetRatio * conversionMS + 50;  // 항상 일정범위의 랜덤한 수로 변하는 ClockOffset을 응용하여 랜덤 딜레이 사용
+          }
 
-      //실제 휴대폰으로 데이터 전송용 값 저장 및 notify() 호출을 통해 전달
-      pCharacteristic->setValue(txString);
-      pCharacteristic->notify();
-      rangeDelay = clockOffsetRatio * conversionMS + 50; // 항상 일정범위의 랜덤한 수로 변하는 ClockOffset을 응용하여 랜덤 딜레이 사용
+        } else {
+          /* DW IC 상태 레지스터에서 RX 오류/타임아웃 이벤트를 클리어 */
+          dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
+        }
+
+        /* 거리 측정 교환 간에 딜레이를 실행 */
+        Sleep(rangeDelay);
+      }
     }
-
-  } else {
-    /* DW IC 상태 레지스터에서 RX 오류/타임아웃 이벤트를 클리어 */
-    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
   }
-
-  /* 거리 측정 교환 간에 딜레이를 실행 */
-  Sleep(rangeDelay);
 }
 
 void initUWB() {
@@ -486,7 +482,7 @@ void initUWB() {
 }
 
 void initBLE() {
-  BLEDevice::init("UWB TAG23");
+  BLEDevice::init("UWB TAG 01");
   BLEServer* pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallback());
   BLEService* pService = pServer->createService(SERVICE_UUID);
@@ -507,11 +503,11 @@ void initBLE() {
   BLEDevice::startAdvertising();
 
   /* BLE 스캔 설정을 비동기 방식(스캔을 실행해두고 다음 줄로 넘어감)으로 설정해두고 5초간 위 스캔 루프를 반복 실행
-     즉, 5초 동안 1.349초간 3~4번 정도 스캔 루프를 실행*/
+     즉, 1초 동안 0.3초간 2번 스캔 루프를 실행*/
   pBLEScan = BLEDevice::getScan();
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
-  pBLEScan->setInterval(1349);    // 1349ms마다 스캔 루프 실행
-  pBLEScan->setWindow(449);       // 449ms동안 스캔
+  pBLEScan->setInterval(300);     // 300ms마다 스캔 루프 실행
+  pBLEScan->setWindow(150);       // 150ms동안 스캔
   pBLEScan->setActiveScan(true);  // 추가 Response를 받기 위해서 ActiveScan을 활성화(= 장치이름, UUID, 등을 추가로 더 받는다는 뜻)
 }
 
@@ -523,39 +519,41 @@ void setup() {
 
 void loop() {
   unsigned long currentMillis = millis();
+  char msg_buffer[10];   // 결과 포맷용 임시 버퍼
+  bleMessage[0] = '\0';  // 메세지 초기화
 
   // 3초(3000ms)마다 스캔 수행
-  if (currentMillis - lastScanTime >= 10000) {
+  if (currentMillis - lastScanTime >= 3000) {
     filteredDeviceCount = 0;
     lastScanTime = currentMillis;
-    pBLEScan->start(3, false);  // 3초 동안 스캔 (false = 비동기)
+    pBLEScan->start(1, false);  // 1초 동안 스캔 (false = 비동기)
   }
 
-  // 저장된 필터링된 주소 리스트에서 처음 3개와 순차 통신
+  communicateWithAnchors();  // 앵커의 주소를 가져오는 것을 함수 내부에서 동작하도록 변경
+
   for (int i = 0; i < 3; i++) {
-    // 이름이 존재하고 "0x"로 시작하며 길이가 정확히 18자인 경우만 처리
-    if (strncmp(filteredDeviceNames[i], "0x", 2) == 0 && strlen(filteredDeviceNames[i]) == 18) {
-      uint64_t address = strtoull(filteredDeviceNames[i], NULL, 16);
-      communicateWithAnchor(address);
-      distanceAVG[i] += distance;
-    }
+    distanceAVG = distanceSUM[i] / 5.0;
+    int convertINT = round(distanceAVG * 100);
+    int anchorID = anchorIds[i];
+
+    Serial.print(anchorIds[i]);
+    Serial.print(": ");
+    Serial.println(distanceAVG);
+
+    sprintf(msg_buffer, "%02d%04d", anchorID, convertINT);
+    strcat(bleMessage, msg_buffer);  // 결과 문자열에 추가
+    distanceSUM[i] = { 0.0 };
   }
 
-  avgCount++;
-  if (avgCount % 10 == 0) {
-    char buffer[50];
+  Serial.print("Formatted txString: ");
+  Serial.println(bleMessage);
 
-    for (int j = 0; j < 3; j++) {
-      double distanceTotal = distanceAVG[j] / 10.0;
-      sprintf(buffer, "Tag%d Distance: %.2fm", j + 1, distanceTotal); // 디버그용
-      Serial.println(buffer);                                         // 디버그용
-      distanceAVG[j] = 0.0;
-    }
-    delay(1000);                                                      // 디버그용
-  }
+  delay(5000);  // 디버그용
+
+  //실제 휴대폰으로 데이터 전송용 값 저장 및 notify() 호출을 통해 전달
+  pCharacteristic->setValue(bleMessage);
+  pCharacteristic->notify();
 }
-
-
 /*****************************************************************************************************************************************************
  * NOTES:
  *
