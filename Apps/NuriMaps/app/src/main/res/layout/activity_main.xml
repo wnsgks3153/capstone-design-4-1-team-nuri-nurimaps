@@ -1,16 +1,222 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.drawerlayout.widget.DrawerLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/main"
+    android:id="@+id/drawer_layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <androidx.fragment.app.FragmentContainerView
-        android:id="@+id/map_fragment"
+    <!-- 메인 콘텐츠 레이아웃 -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/main"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:name="com.naver.maps.map.MapFragment" />
+        tools:context=".MainActivity">
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+        <!-- 지도 프래그먼트 -->
+        <androidx.fragment.app.FragmentContainerView
+            android:id="@+id/map_fragment"
+            android:name="com.naver.maps.map.MapFragment"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <com.naver.maps.map.widget.CompassView
+            android:id="@+id/compass"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:layout_marginEnd="15dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- 왼쪽 상단 버튼 (메뉴 또는 기능 버튼) -->
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/top_left_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@drawable/circular_button_background"
+            android:src="@drawable/ic_menu_icon"
+            android:padding="12dp"
+            android:elevation="4dp"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"/>
+
+        <!-- 층수 버튼 컨테이너 (카드뷰 형태) -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/floors_card_container"
+            android:layout_width="40dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginBottom="120dp"
+            app:cardCornerRadius="24dp"
+            app:cardElevation="4dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="136dp"
+                android:background="@android:color/white">
+
+                <!-- 상단 그림자 효과 -->
+                <View
+                    android:id="@+id/top_shadow"
+                    android:layout_width="match_parent"
+                    android:layout_height="13dp"
+                    android:layout_gravity="top"
+                    android:background="@drawable/scroll_fade_top"
+                    android:elevation="1dp" />
+
+                <!-- 층수 버튼 스크롤 뷰 -->
+                <ScrollView
+                    android:id="@+id/floor_scroll_view"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:fadeScrollbars="false"
+                    android:scrollbars="vertical"
+                    android:clipToPadding="false"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp">
+
+                    <LinearLayout
+                        android:id="@+id/floor_button_layout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="6dp">
+
+                        <!-- 층수 버튼들 (위에서 아래로 내림차순) -->
+                        <TextView
+                            android:id="@+id/floor_5_button"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:text="5"
+                            android:textSize="16sp"
+                            android:gravity="center"
+                            android:background="@drawable/floor_button_bg"
+                            android:layout_marginVertical="2dp" />
+
+                        <TextView
+                            android:id="@+id/floor_4_button"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:text="4"
+                            android:textSize="16sp"
+                            android:gravity="center"
+                            android:background="@drawable/floor_button_bg"
+                            android:layout_marginVertical="2dp" />
+
+                        <TextView
+                            android:id="@+id/floor_3_button"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:text="3"
+                            android:textSize="16sp"
+                            android:gravity="center"
+                            android:background="@drawable/floor_button_bg"
+                            android:layout_marginVertical="2dp" />
+
+                        <TextView
+                            android:id="@+id/floor_2_button"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:text="2"
+                            android:textSize="16sp"
+                            android:gravity="center"
+                            android:background="@drawable/floor_button_bg"
+                            android:layout_marginVertical="2dp" />
+
+                        <TextView
+                            android:id="@+id/floor_1_button"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:text="1"
+                            android:textSize="16sp"
+                            android:gravity="center"
+                            android:background="@drawable/floor_button_bg"
+                            android:layout_marginVertical="2dp" />
+
+                        <TextView
+                            android:id="@+id/floor_b1_button"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:text="B1"
+                            android:textSize="16sp"
+                            android:gravity="center"
+                            android:background="@drawable/floor_button_bg"
+                            android:layout_marginVertical="2dp" />
+
+                        <TextView
+                            android:id="@+id/floor_b2_button"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:text="B2"
+                            android:textSize="16sp"
+                            android:gravity="center"
+                            android:background="@drawable/floor_button_bg"
+                            android:layout_marginVertical="2dp" />
+
+                    </LinearLayout>
+                </ScrollView>
+
+                <!-- 하단 그림자 효과 -->
+                <View
+                    android:id="@+id/bottom_shadow"
+                    android:layout_width="match_parent"
+                    android:layout_height="13dp"
+                    android:layout_gravity="bottom"
+                    android:background="@drawable/scroll_fade_bottom"
+                    android:elevation="1dp" />
+            </FrameLayout>
+        </androidx.cardview.widget.CardView>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- 슬라이드 메뉴 레이아웃 -->
+    <com.google.android.material.navigation.NavigationView
+        android:id="@+id/nav_view"
+        android:layout_width="180dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        android:background="@android:color/white"
+        android:paddingTop="50dp">
+
+        <!-- 슬라이드 메뉴 내용 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="메뉴"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:paddingBottom="16dp"/>
+
+            <!-- 메뉴 항목들 -->
+            <TextView
+                android:id="@+id/menu_item1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="메뉴 항목 1"
+                android:padding="12dp"
+                android:textSize="16sp"/>
+
+            <TextView
+                android:id="@+id/menu_item2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="메뉴 항목 2"
+                android:padding="12dp"
+                android:textSize="16sp"/>
+
+            <!-- 필요에 따라 더 많은 메뉴 항목 추가 가능 -->
+        </LinearLayout>
+    </com.google.android.material.navigation.NavigationView>
+</androidx.drawerlayout.widget.DrawerLayout>

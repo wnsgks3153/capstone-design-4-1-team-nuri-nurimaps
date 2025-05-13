@@ -5,14 +5,14 @@ plugins {
 
 android {
     namespace = "com.example.nuri_maps"
-    compileSdk = 35
+    compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.nuri_maps"
-        minSdk = 24
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        applicationId = namespace
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 100600
+        versionName = "1.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -37,8 +37,6 @@ android {
 
 dependencies {
 
-    implementation("com.google.android.gms:play-services-location:21.0.1") // Google Play location Service
-    implementation("com.naver.maps:map-sdk:3.20.0") // 네이버 지도 SDK
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
@@ -47,4 +45,15 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.multidex:multidex:2.0.1")
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+    implementation("androidx.viewpager2:viewpager2:1.0.0")
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
+
+    implementation("com.google.android.material:material:1.8.0")
+    implementation("com.google.android.gms:play-services-location:21.0.1")
+
+    implementation("com.naver.maps:map-sdk:3.21.0")
 }
