@@ -129,7 +129,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
 
     }
-    
+
     override fun onMapReady(naverMap: NaverMap) {
 
         naverMap.uiSettings.isCompassEnabled = false
@@ -239,7 +239,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             ?: MapFragment.newInstance(NaverMapOptions()
                 .indoorEnabled(true)
                 .compassEnabled(false)
-                .mapType(NaverMap.MapType.Basic)
                 .locationButtonEnabled(true)
             ).also {
                 supportFragmentManager.beginTransaction().add(R.id.map_fragment, it).commit()
@@ -296,29 +295,27 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         if (groundOverlay == null) {
             val southWest = LatLng(36.16752435, 128.4671000) // 좌측 하단
             val northEast = LatLng(36.16794999, 128.4682282) // 우측 상단
-            
+
             // LatLngBounds로 범위 설정
             val bounds = LatLngBounds(southWest, northEast)
 
-            val overlay = GroundOverlay().apply {
+            groundOverlay = GroundOverlay().apply {
                 image = getOverlayImage(currentFloor)
                 this.bounds = bounds
                 setMap(naverMap)
             }
 
-            groundOverlay = overlay
-
             // 오버레이가 표시될 때 현재 층에 맞는 버튼 강조 표시
             highlightSelectedFloor(currentFloor)
+
+        } else {
+            groundOverlay?.setMap(naverMap)
         }
     }
 
     // 오버레이 숨기기
     private fun hideOverlay() {
-        groundOverlay?.let {
-            it.setMap(null)  // 오버레이를 지도에서 제거
-            groundOverlay = null
-        }
+        groundOverlay?.setMap(null)
     }
 
     // 층수에 맞는 오버레이 이미지 리소스 ID 반환
