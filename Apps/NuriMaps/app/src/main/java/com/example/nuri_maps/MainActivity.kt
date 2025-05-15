@@ -9,6 +9,7 @@ import android.widget.TextView
 import android.widget.ScrollView
 import android.widget.LinearLayout
 import android.content.pm.PackageManager
+import android.widget.FrameLayout
 import androidx.cardview.widget.CardView
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
@@ -18,6 +19,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatImageButton
 import androidx.drawerlayout.widget.DrawerLayout
+import androidx.fragment.app.FragmentContainerView
 import com.google.android.gms.location.LocationServices
 import com.google.android.material.navigation.NavigationView
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -72,7 +74,15 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         setContentView(R.layout.activity_main)
 
         // 시스템 바 인셋 처리
-        setupSystemBars()
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            insets
+        }
+
+        drawerLayout = findViewById(R.id.drawer_layout)
+        topLeftButton = findViewById(R.id.top_left_button)
+        navView = findViewById(R.id.navigation_view)
 
         // UI 초기화
         initUI()
@@ -80,12 +90,44 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // 지도 초기화
         initMap()
 
-        setupDrawerLayout()
-
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         locationSource = FusedLocationSource(this, LOCATION_PERMISSION_REQUEST_CODE).apply {
         }
+
+        topLeftButton.setOnClickListener {
+            if (!drawerLayout.isDrawerOpen(navView)) {
+                drawerLayout.openDrawer(navView)
+            }
+        }
+
+        navView.setNavigationItemSelectedListener { menuItem ->
+            when (menuItem.itemId) {
+                R.id.device_connect_item -> {
+                    supportFragmentManager.beginTransaction()
+                        .replace(R.id.content_frame, DeviceConnectFragment())
+                        .addToBackStack(null)
+                        .commit()
+
+                    findViewById<FragmentContainerView>(R.id.map_fragment).visibility = View.GONE
+                    findViewById<FrameLayout>(R.id.content_frame).visibility = View.VISIBLE
+                    topLeftButton.visibility = View.GONE
+                }
+                R.id.developer_tools_item -> {
+                    supportFragmentManager.beginTransaction()
+                        .replace(R.id.content_frame, DeveloperToolsFragment())
+                        .addToBackStack(null)
+                        .commit()
+
+                    findViewById<FragmentContainerView>(R.id.map_fragment).visibility = View.GONE
+                    findViewById<FrameLayout>(R.id.content_frame).visibility = View.VISIBLE
+                    topLeftButton.visibility = View.GONE
+                }
+            }
+            drawerLayout.closeDrawers()
+            true
+        }
+
     }
     
     override fun onMapReady(naverMap: NaverMap) {
@@ -136,14 +178,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
 
         setupCameraListener(naverMap)
-    }
-
-    private fun setupSystemBars() {
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-            insets
-        }
     }
 
     private fun initUI() {
@@ -213,24 +247,27 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         mapFragment.getMapAsync(this)
     }
 
-    // 드로어 레이아웃 설정
-    private fun setupDrawerLayout() {
-        drawerLayout = findViewById(R.id.drawer_layout)
-        topLeftButton = findViewById(R.id.top_left_button)
-        navView = findViewById(R.id.nav_view)
-
-        topLeftButton.setOnClickListener {
-            if (!drawerLayout.isDrawerOpen(navView)) {
-                drawerLayout.openDrawer(navView)
-            }
-        }
-    }
-
     override fun onBackPressed() {
-        if (drawerLayout.isDrawerOpen(navView)) {
-            drawerLayout.closeDrawer(navView)
-        } else {
-            super.onBackPressed()
+        val contentFrame = findViewById<FrameLayout>(R.id.content_frame)
+
+        when {
+            drawerLayout.isDrawerOpen(navView) -> {
+                drawerLayout.closeDrawer(navView)
+            }
+
+            contentFrame.visibility == View.VISIBLE -> {
+                // 현재 프래그먼트 화면을 닫고 지도 다시 보이게
+                supportFragmentManager.popBackStack()  // 백스택 정리
+                contentFrame.visibility = View.GONE
+                findViewById<FragmentContainerView>(R.id.map_fragment).visibility = View.VISIBLE
+
+                // 버튼 다시 보이기
+                topLeftButton.visibility = View.VISIBLE
+            }
+
+            else -> {
+                super.onBackPressed()
+            }
         }
     }
 

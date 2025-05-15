@@ -22,6 +22,13 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
+        <FrameLayout
+            android:id="@+id/content_frame"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/white"
+            android:visibility="gone" />
+
         <com.naver.maps.map.widget.CompassView
             android:id="@+id/compass"
             android:layout_width="wrap_content"
@@ -177,46 +184,12 @@
 
     <!-- 슬라이드 메뉴 레이아웃 -->
     <com.google.android.material.navigation.NavigationView
-        android:id="@+id/nav_view"
-        android:layout_width="180dp"
+        android:id="@+id/navigation_view"
+        android:layout_width="200dp"
         android:layout_height="match_parent"
         android:layout_gravity="start"
-        android:background="@android:color/white"
-        android:paddingTop="50dp">
+        android:fitsSystemWindows="true"
+        app:headerLayout="@layout/header_navigation_drawer"
+        app:menu="@menu/navigation_drawer"/>
 
-        <!-- 슬라이드 메뉴 내용 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:padding="16dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="메뉴"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:paddingBottom="16dp"/>
-
-            <!-- 메뉴 항목들 -->
-            <TextView
-                android:id="@+id/menu_item1"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="메뉴 항목 1"
-                android:padding="12dp"
-                android:textSize="16sp"/>
-
-            <TextView
-                android:id="@+id/menu_item2"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="메뉴 항목 2"
-                android:padding="12dp"
-                android:textSize="16sp"/>
-
-            <!-- 필요에 따라 더 많은 메뉴 항목 추가 가능 -->
-        </LinearLayout>
-    </com.google.android.material.navigation.NavigationView>
 </androidx.drawerlayout.widget.DrawerLayout>
