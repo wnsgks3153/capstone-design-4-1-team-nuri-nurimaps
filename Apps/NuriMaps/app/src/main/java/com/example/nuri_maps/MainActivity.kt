@@ -10,6 +10,7 @@ import android.widget.ScrollView
 import android.widget.LinearLayout
 import android.content.pm.PackageManager
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.cardview.widget.CardView
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
@@ -49,6 +50,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     // 상태 변수
+    private var currentLocation: Location? = null // 현재 위치 값 받아와서 다른데 쓸일 있으면 다시 사용
     private var groundOverlay: GroundOverlay? = null
     private var currentFloor = DEFAULT_FLOOR // 기본 층을 3층으로 설정
 
@@ -66,7 +68,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // 위치를 받아오기 위한
     private lateinit var locationSource: FusedLocationSource
     private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private lateinit var map: NaverMap
+    private lateinit var naverMap: NaverMap
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,7 +90,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         initUI()
 
         // 지도 초기화
-        initMap()
+        if (checkLocationPermission()) {
+            initMap()
+        } else {
+            requestLocationPermission()
+        }
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
@@ -130,52 +136,62 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     }
 
-    override fun onMapReady(naverMap: NaverMap) {
+    private fun checkLocationPermission(): Boolean {
+        return ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    }
 
-        naverMap.uiSettings.isCompassEnabled = false
-        findViewById<CompassView>(R.id.compass).map = naverMap
+    private fun requestLocationPermission() {
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+            LOCATION_PERMISSION_REQUEST_CODE
+        )
+    }
+
+    override fun onMapReady(naverMap: NaverMap) {
 
         // 초기 심볼 스케일 설정
         naverMap.setSymbolScale(1.0f)
+        naverMap.locationSource = locationSource
         naverMap.isIndoorEnabled = true
+        naverMap.uiSettings.isLocationButtonEnabled = true
+        naverMap.uiSettings.isCompassEnabled = false
+        findViewById<CompassView>(R.id.compass).map = naverMap
 
-        map = naverMap
-        map.locationSource = locationSource
-        map.uiSettings.isLocationButtonEnabled = true
-        map.locationTrackingMode = LocationTrackingMode.Follow
-        map.addOnOptionChangeListener {
-            val mode = map.locationTrackingMode
+        naverMap.locationTrackingMode = LocationTrackingMode.Follow
+        naverMap.addOnOptionChangeListener {
+            val mode = naverMap.locationTrackingMode
             locationSource.isCompassEnabled = mode == LocationTrackingMode.Follow || mode == LocationTrackingMode.Face
         }
-
-        var currentLocation: Location?
 
         if (ActivityCompat.checkSelfPermission(
                 this,
                 Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+            ) == PackageManager.PERMISSION_GRANTED || ActivityCompat.checkSelfPermission(
                 this,
                 Manifest.permission.ACCESS_COARSE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
+            ) == PackageManager.PERMISSION_GRANTED) {
 
-        fusedLocationClient.lastLocation
-            .addOnSuccessListener { location: Location? ->
-                currentLocation = location
+            fusedLocationClient.lastLocation
+                .addOnSuccessListener { location: Location? ->
+                    location?.let { loc ->
+                        //currentLocation = loc  // 멤버 변수에 할당( 나중에 쓸일이 있다면 다시 사용)
 
-                map.locationOverlay.run {
-                    isVisible = true
-                    position = LatLng(currentLocation!!.latitude, currentLocation!!.longitude)
+                        naverMap.locationOverlay.run {
+                            isVisible = true
+                            position = LatLng(loc.latitude, loc.longitude)
+                        }
+
+                        val cameraUpdate = CameraUpdate
+                            .scrollTo(LatLng(loc.latitude, loc.longitude))
+                            .animate(CameraAnimation.Fly)
+
+                        naverMap.moveCamera(cameraUpdate)
+                    }
                 }
-
-                // 카메라 현재 위치로 이동
-                val cameraUpdate = CameraUpdate
-                    .scrollTo(LatLng(currentLocation!!.latitude,currentLocation!!.longitude))
-                    .animate(CameraAnimation.Fly)
-                naverMap.moveCamera(cameraUpdate)
-            }
+        } else {
+            // 권한이 없을 때 동작 (필요하면 권한 요청 UI 띄우거나 안내)
+        }
 
         setupCameraListener(naverMap)
     }
@@ -225,13 +241,15 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
-        if (locationSource.onRequestPermissionsResult(requestCode, permissions, grantResults)) {
-            if (!locationSource.isActivated) {
-                map.locationTrackingMode = LocationTrackingMode.None
-            }
-            return
-        }
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                initMap()
+            } else {
+                Toast.makeText(this, "위치 권한이 필요합니다.", Toast.LENGTH_SHORT).show()
+                // 권한 없을 때 처리
+            }
+        }
     }
 
     private fun initMap() {
