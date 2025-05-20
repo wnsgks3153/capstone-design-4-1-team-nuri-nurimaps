@@ -43,7 +43,9 @@ import com.naver.maps.map.LocationTrackingMode
 import com.naver.maps.map.overlay.OverlayImage
 import com.naver.maps.map.overlay.GroundOverlay
 import com.naver.maps.map.util.FusedLocationSource
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     // 상수 정의
