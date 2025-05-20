@@ -1,4 +1,4 @@
-package com.example.nuri_maps
+package com.nurimaps.main
 
 import android.os.Bundle
 import android.view.LayoutInflater

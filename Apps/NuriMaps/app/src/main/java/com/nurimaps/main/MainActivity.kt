@@ -1,6 +1,9 @@
-package com.example.nuri_maps
+package com.nurimaps.main
 
 import android.Manifest
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.graphics.Typeface
@@ -9,10 +12,13 @@ import android.widget.TextView
 import android.widget.ScrollView
 import android.widget.LinearLayout
 import android.content.pm.PackageManager
+import android.os.Build
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.cardview.widget.CardView
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -70,6 +76,46 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var naverMap: NaverMap
 
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val locationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
+        val bluetoothGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissions[Manifest.permission.BLUETOOTH_CONNECT] == true &&
+                    permissions[Manifest.permission.BLUETOOTH_SCAN] == true
+        } else {
+            permissions[Manifest.permission.BLUETOOTH] == true &&
+                    permissions[Manifest.permission.BLUETOOTH_ADMIN] == true
+        }
+
+        if (locationGranted) {
+            initMap()
+        }
+
+        if (bluetoothGranted && !isBluetoothEnabled) {
+            enableBluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+        }
+
+    }
+
+    private val enableBluetoothLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        // Bluetooth Enable 결과 처리 (필요시)
+    }
+
+    private val bluetoothManager by lazy {
+        applicationContext.getSystemService(BluetoothManager::class.java)
+    }
+    private val bluetoothAdapter by lazy {
+        bluetoothManager?.adapter
+    }
+
+    private val isBluetoothEnabled: Boolean
+        get() = bluetoothAdapter?.isEnabled == true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -86,20 +132,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         topLeftButton = findViewById(R.id.top_left_button)
         navView = findViewById(R.id.navigation_view)
 
+        // 위치 & BLE 권한 한번에 요청
+        requestAllPermissions()
+
         // UI 초기화
         initUI()
 
-        // 지도 초기화
-        if (checkLocationPermission()) {
-            initMap()
-        } else {
-            requestLocationPermission()
-        }
-
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        locationSource = FusedLocationSource(this, LOCATION_PERMISSION_REQUEST_CODE).apply {
-        }
+        locationSource = FusedLocationSource(this, LOCATION_PERMISSION_REQUEST_CODE).apply {}
+
+
 
         topLeftButton.setOnClickListener {
             if (!drawerLayout.isDrawerOpen(navView)) {
@@ -117,7 +160,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
                     findViewById<FragmentContainerView>(R.id.map_fragment).visibility = View.GONE
                     findViewById<FrameLayout>(R.id.content_frame).visibility = View.VISIBLE
-                    topLeftButton.visibility = View.GONE
+                    showTopLeftButton(false)
+                    drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
                 }
                 R.id.developer_tools_item -> {
                     supportFragmentManager.beginTransaction()
@@ -127,25 +171,43 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
                     findViewById<FragmentContainerView>(R.id.map_fragment).visibility = View.GONE
                     findViewById<FrameLayout>(R.id.content_frame).visibility = View.VISIBLE
-                    topLeftButton.visibility = View.GONE
+                    showTopLeftButton(false)
+                    drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
                 }
             }
             drawerLayout.closeDrawers()
             true
         }
 
+        supportFragmentManager.addOnBackStackChangedListener {
+            if (supportFragmentManager.backStackEntryCount == 0) {
+                // 메인 맵 화면 (루트 프래그먼트)로 돌아왔을 때
+                drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED) // 🔓 해제
+            }
+        }
+
+
     }
 
-    private fun checkLocationPermission(): Boolean {
-        return ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-    }
+    private fun requestAllPermissions() {
+        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_ADVERTISE
+            )
+        } else {
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.BLUETOOTH,
+                Manifest.permission.BLUETOOTH_ADMIN
+            )
+        }
 
-    private fun requestLocationPermission() {
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
-            LOCATION_PERMISSION_REQUEST_CODE
-        )
+        permissionLauncher.launch(permissions)
     }
 
     override fun onMapReady(naverMap: NaverMap) {
@@ -212,6 +274,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         initFloorButtons()
     }
 
+    fun showTopLeftButton(show: Boolean) {
+        if (::topLeftButton.isInitialized) {
+            topLeftButton.visibility = if (show) View.VISIBLE else View.GONE
+        }
+    }
+
     // 층수 버튼 초기화
     private fun initFloorButtons() {
         val floorButtonIds = mapOf(
@@ -265,23 +333,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     override fun onBackPressed() {
-        val contentFrame = findViewById<FrameLayout>(R.id.content_frame)
-
         when {
             drawerLayout.isDrawerOpen(navView) -> {
                 drawerLayout.closeDrawer(navView)
             }
-
-            contentFrame.visibility == View.VISIBLE -> {
-                // 현재 프래그먼트 화면을 닫고 지도 다시 보이게
-                supportFragmentManager.popBackStack()  // 백스택 정리
-                contentFrame.visibility = View.GONE
-                findViewById<FragmentContainerView>(R.id.map_fragment).visibility = View.VISIBLE
-
-                // 버튼 다시 보이기
-                topLeftButton.visibility = View.VISIBLE
-            }
-
             else -> {
                 super.onBackPressed()
             }

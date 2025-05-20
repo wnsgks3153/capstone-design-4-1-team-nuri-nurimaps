@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.nuri_maps"
+    namespace = "com.nurimaps.main"
     compileSdk = 34
 
     defaultConfig {

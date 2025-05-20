@@ -1,4 +1,4 @@
-package com.example.nuri_maps
+package com.nurimaps.main
 
 import org.junit.Test
 
