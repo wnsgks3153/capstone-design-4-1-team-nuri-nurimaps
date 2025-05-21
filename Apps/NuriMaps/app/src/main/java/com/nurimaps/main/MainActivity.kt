@@ -15,6 +15,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.widget.FrameLayout
 import android.widget.Toast
+import androidx.activity.addCallback
 import androidx.cardview.widget.CardView
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
@@ -144,7 +145,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         locationSource = FusedLocationSource(this, LOCATION_PERMISSION_REQUEST_CODE).apply {}
 
-
+        onBackPressedDispatcher.addCallback(this) {
+            if (drawerLayout.isDrawerOpen(navView)) {
+                drawerLayout.closeDrawer(navView)
+            } else {
+                val backStackCount = supportFragmentManager.backStackEntryCount
+                if (backStackCount > 0) {
+                    supportFragmentManager.popBackStack()
+                } else {
+                    finish()
+                }
+            }
+        }
 
         topLeftButton.setOnClickListener {
             if (!drawerLayout.isDrawerOpen(navView)) {
@@ -182,10 +194,20 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
 
         supportFragmentManager.addOnBackStackChangedListener {
-            if (supportFragmentManager.backStackEntryCount == 0) {
-                // 메인 맵 화면 (루트 프래그먼트)로 돌아왔을 때
-                drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED) // 🔓 해제
-            }
+            val isContentVisible = supportFragmentManager.backStackEntryCount > 0
+
+            findViewById<FragmentContainerView>(R.id.map_fragment).visibility =
+                if (isContentVisible) View.GONE else View.VISIBLE
+
+            findViewById<FrameLayout>(R.id.content_frame).visibility =
+                if (isContentVisible) View.VISIBLE else View.GONE
+
+            showTopLeftButton(!isContentVisible) // content_frame이 보이면 true, 아니면 false
+
+            drawerLayout.setDrawerLockMode(
+                if (isContentVisible) DrawerLayout.LOCK_MODE_LOCKED_CLOSED
+                else DrawerLayout.LOCK_MODE_UNLOCKED
+            )
         }
 
 
@@ -334,16 +356,26 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         mapFragment.getMapAsync(this)
     }
 
-    override fun onBackPressed() {
-        when {
-            drawerLayout.isDrawerOpen(navView) -> {
-                drawerLayout.closeDrawer(navView)
-            }
-            else -> {
-                super.onBackPressed()
-            }
-        }
-    }
+//    override fun onBackPressed() {
+//        if (drawerLayout.isDrawerOpen(navView)) {
+//            drawerLayout.closeDrawer(navView)
+//        } else {
+//            val currentFragment = supportFragmentManager.findFragmentById(R.id.content_frame)
+//            val dispatcher = onBackPressedDispatcher
+//
+//            val lifecycleOwner = (currentFragment?.viewLifecycleOwner)
+//            val backStackCount = supportFragmentManager.backStackEntryCount
+//
+//            // 현재 Fragment에 OnBackPressedCallback이 있는 경우
+//            if (lifecycleOwner != null && backStackCount > 0) {
+//                dispatcher.onBackPressed() // 👉 Fragment에서 등록한 콜백으로 이동
+//            } else if (backStackCount > 0) {
+//                supportFragmentManager.popBackStack()
+//            } else {
+//                super.onBackPressed()
+//            }
+//        }
+//    }
 
     private fun setupCameraListener(naverMap: NaverMap) {
         naverMap.addOnCameraIdleListener {

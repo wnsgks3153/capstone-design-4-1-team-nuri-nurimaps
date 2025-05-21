@@ -9,14 +9,18 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
+import androidx.activity.addCallback
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.nurimaps.feature.presentation.components.DeviceConnectViewModel
 import com.nurimaps.feature.presentation.components.ReceivedValuesAdapter
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class DeviceCommunicationFragment : Fragment() {
 
     private lateinit var deviceNameTextView: TextView
@@ -28,7 +32,7 @@ class DeviceCommunicationFragment : Fragment() {
     private lateinit var adapter: ReceivedValuesAdapter
 
     // viewModel은 Fragment마다 달라질 수 있으니 생성자 주입 혹은 activityViewModels() 등 상황에 맞게 수정
-    private val viewModel: DeviceConnectViewModel by viewModels()
+    private val viewModel: DeviceConnectViewModel by activityViewModels()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -72,6 +76,11 @@ class DeviceCommunicationFragment : Fragment() {
                 sendEditText.text.clear()
                 hideKeyboard()
             }
+        }
+
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner) {
+            viewModel.disconnect()  // 연결 해제
+            parentFragmentManager.popBackStack()  // 뒤로가기
         }
     }
 

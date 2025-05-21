@@ -88,6 +88,8 @@ class BLEControllerImpl(
         }
     }
 
+    private var notifyCharacteristic: BluetoothGattCharacteristic? = null
+
     private val pairDeviceReceiver = PairDeviceReceiver(
         onPairRequest = {
             _isPairing.update { true }
@@ -142,41 +144,45 @@ class BLEControllerImpl(
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                gatt.getService(UUID.fromString(SERVICE_UUID)).let { service ->
+                var found = false
 
-                    val characteristic =
-                        service.getCharacteristic(UUID.fromString(CHARACTERISTIC_UUID))
+                for (service in gatt.services) {
+                    for (characteristic in service.characteristics) {
+                        val props = characteristic.properties
 
-                    if (characteristic != null) {
-                        gatt.setCharacteristicNotification(characteristic, true)
+                        val supportsNotify =
+                            props and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0
+                        val supportsWrite =
+                            props and BluetoothGattCharacteristic.PROPERTY_WRITE != 0 ||
+                                    props and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
 
-                        val descriptor = characteristic.getDescriptor(
-                            UUID.fromString(CLIENT_CHARACTERISTIC_CONFIG_UUID)
-                        )
-                        descriptor?.let {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                gatt.writeDescriptor(
-                                    it,
-                                    BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                                )
-                            } else {
-                                @Suppress("DEPRECATION")
+                        if (supportsNotify && supportsWrite) {
+                            notifyCharacteristic = characteristic
+
+                            gatt.setCharacteristicNotification(characteristic, true)
+
+                            val descriptor = characteristic.getDescriptor(
+                                UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+                            )
+                            descriptor?.let {
                                 it.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                                @Suppress("DEPRECATION")
                                 gatt.writeDescriptor(it)
                             }
-                        }
-                    } else {
-                        setMessage("Characteristic not found!")
-                    }
 
-                } ?: run {
-                    setMessage("Service not found!")
+                            setMessage("✅ Found characteristic: ${characteristic.uuid}")
+                            found = true
+                            break
+                        }
+                    }
+                    if (found) break
                 }
+
+                if (!found) setMessage("⚠️ 알림 가능한 characteristic을 찾을 수 없습니다.")
             } else {
                 setMessage("Service discovery failed -> status: $status")
             }
         }
+
 
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt,
@@ -184,15 +190,10 @@ class BLEControllerImpl(
             value: ByteArray
         ) {
             super.onCharacteristicChanged(gatt, characteristic, value)
-            if (characteristic.uuid == UUID.fromString(CHARACTERISTIC_UUID)) {
-                @Suppress("DEPRECATION")
-                val receivedValue = characteristic.value?.let { byteArray ->
-                    String(byteArray, Charsets.UTF_8)
-                } ?: "No value received"
 
-                _receivedValues.update { values ->
-                    values + receivedValue
-                }
+            if (characteristic.uuid == notifyCharacteristic?.uuid) {
+                val receivedValue = value.toString(Charsets.UTF_8)
+                _receivedValues.update { values -> values + receivedValue }
             }
         }
 
@@ -297,25 +298,24 @@ class BLEControllerImpl(
     }
 
     override fun sendValue(text: String) {
-        val service = bluetoothGatt?.getService(UUID.fromString(SERVICE_UUID))
-        val characteristic = service?.getCharacteristic(UUID.fromString(CHARACTERISTIC_UUID))
+        val characteristic = notifyCharacteristic
 
-        characteristic?.let {
+        if (characteristic != null) {
             val data = text.toByteArray(Charsets.UTF_8)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 bluetoothGatt?.writeCharacteristic(
-                    it,
+                    characteristic,
                     data,
                     BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
                 )
             } else {
                 @Suppress("DEPRECATION")
-                it.value = data
+                characteristic.value = data
                 @Suppress("DEPRECATION")
-                bluetoothGatt?.writeCharacteristic(it)
+                bluetoothGatt?.writeCharacteristic(characteristic)
             }
-        } ?: run {
-            setMessage("Characteristic not found!")
+        } else {
+            setMessage("알림 가능한 characteristic이 설정되지 않았습니다.")
         }
     }
 
@@ -379,10 +379,4 @@ class BLEControllerImpl(
 
     private fun hasPermission(permission: String) =
         context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
-
-    companion object {
-        private const val SERVICE_UUID = "22bf526e-1f59-40fb-a344-0bea8c1bfef2"
-        private const val CHARACTERISTIC_UUID = "cdc7651d-88bd-4c0d-8c90-4572db5aa14b"
-        private const val CLIENT_CHARACTERISTIC_CONFIG_UUID = "00002902-0000-1000-8000-00805f9b34fb"
-    }
 }
