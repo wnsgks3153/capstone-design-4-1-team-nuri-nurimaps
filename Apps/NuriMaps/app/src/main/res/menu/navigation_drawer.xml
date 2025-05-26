@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/main_item"
+        android:title="@string/main_menu_title">
+        <menu>
+            <item
+                android:id="@+id/device_connect_item"
+                android:icon="@drawable/settings_icon"
+                android:title="@string/device_connect_title"
+                android:checkable="true"/>
+            <item
+                android:id="@+id/developer_tools_item"
+                android:icon="@drawable/settings_icon"
+                android:title="@string/developer_tools_title"
+                android:checkable="true"/>
+        </menu>
+    </item>
+</menu>

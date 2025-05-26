@@ -1,4 +1,4 @@
-package com.example.nuri_maps
+package com.nurimaps.main
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4

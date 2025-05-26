@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     "/Users/ethan/Desktop/무제 폴더/cal/cal"
+relocations:     []
+...

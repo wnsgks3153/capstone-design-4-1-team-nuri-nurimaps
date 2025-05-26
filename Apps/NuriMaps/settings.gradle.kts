@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "NuriMaps"
 include(":app")
+ 
