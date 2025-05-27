@@ -44,6 +44,7 @@ import com.naver.maps.map.LocationTrackingMode
 import com.naver.maps.map.overlay.OverlayImage
 import com.naver.maps.map.overlay.GroundOverlay
 import com.naver.maps.map.util.FusedLocationSource
+import com.naver.maps.map.widget.ZoomControlView
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -200,7 +201,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 if (isContentVisible) View.GONE else View.VISIBLE
 
             findViewById<FrameLayout>(R.id.content_frame).visibility =
-                if (isContentVisible) View.VISIBLE else View.GONE
+                if (!isContentVisible) View.GONE else View.VISIBLE
+
+            findViewById<CompassView>(R.id.compass).visibility =
+                if (isContentVisible) View.GONE else View.VISIBLE
+
+            findViewById<ZoomControlView>(R.id.zoom).visibility =
+                if (isContentVisible) View.GONE else View.VISIBLE
+
+            findViewById<CardView>(R.id.floors_card_container).visibility =
+                if (isContentVisible) View.GONE else View.VISIBLE
 
             showTopLeftButton(!isContentVisible) // content_frame이 보이면 true, 아니면 false
 
@@ -242,7 +252,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         naverMap.isIndoorEnabled = true
         naverMap.uiSettings.isLocationButtonEnabled = true
         naverMap.uiSettings.isCompassEnabled = false
+        naverMap.uiSettings.isZoomControlEnabled = false
         findViewById<CompassView>(R.id.compass).map = naverMap
+        findViewById<ZoomControlView>(R.id.zoom).map = naverMap
 
         naverMap.locationTrackingMode = LocationTrackingMode.Follow
         naverMap.addOnOptionChangeListener {
@@ -349,6 +361,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             ?: MapFragment.newInstance(NaverMapOptions()
                 .indoorEnabled(true)
                 .compassEnabled(false)
+                .zoomControlEnabled(false)
                 .locationButtonEnabled(true)
             ).also {
                 supportFragmentManager.beginTransaction().add(R.id.map_fragment, it).commit()
