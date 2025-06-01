@@ -413,8 +413,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // 오버레이 표시
     private fun showOverlay(naverMap: NaverMap) {
         if (groundOverlay == null) {
-            val southWest = LatLng(36.16752435, 128.4671000) // 좌측 하단
-            val northEast = LatLng(36.16794999, 128.4682282) // 우측 상단
+            val southWest = LatLng(36.16777, 128.46721) // 좌측 하단
+            val northEast = LatLng(36.16796, 128.46813) // 우측 상단
 
             // LatLngBounds로 범위 설정
             val bounds = LatLngBounds(southWest, northEast)
@@ -442,8 +442,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun getOverlayImage(floor: String): OverlayImage {
         val overlayImageRes = when(floor) {
             "5F" -> R.drawable.floor_image3 // 실제 5층 이미지로 변경 필요
-            "4F" -> R.drawable.floor_image4
-            "3F" -> R.drawable.floor_image3
+            "4F" -> R.drawable.floor_image4_2_1
+            "3F" -> R.drawable.floor_image3_2_1
             "2F" -> R.drawable.floor_image3 // 실제 2층 이미지로 변경 필요
             "1F" -> R.drawable.floor_image3 // 실제 1층 이미지로 변경 필요
             "B1" -> R.drawable.floor_image3 // 실제 B1층 이미지로 변경 필요

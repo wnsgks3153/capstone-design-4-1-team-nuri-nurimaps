@@ -21,6 +21,9 @@ import com.nurimaps.feature.ble.data.mappers.toBluetoothDeviceModel
 import com.nurimaps.feature.ble.data.receivers.PairDeviceReceiver
 import com.nurimaps.feature.ble.domain.BLEController
 import com.nurimaps.feature.ble.domain.model.BluetoothDeviceModel
+import com.nurimaps.feature.uwb.BleDataParser
+import com.nurimaps.feature.uwb.PositionCalculator
+import com.nurimaps.feature.uwb.PositionViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -35,7 +38,8 @@ import java.util.UUID
 
 @SuppressLint("MissingPermission")
 class BLEControllerImpl(
-    private val context: Context
+    private val context: Context,
+    private val viewModel: PositionViewModel
 ) : BLEController {
 
     private val bluetoothManager by lazy {
@@ -183,7 +187,6 @@ class BLEControllerImpl(
             }
         }
 
-
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
@@ -192,8 +195,8 @@ class BLEControllerImpl(
             super.onCharacteristicChanged(gatt, characteristic, value)
 
             if (characteristic.uuid == notifyCharacteristic?.uuid) {
-                val receivedValue = value.toString(Charsets.UTF_8)
-                _receivedValues.update { values -> values + receivedValue }
+                val receivedString = value.toString(Charsets.UTF_8)
+                viewModel.onBleDataReceived(receivedString)  // 여기서 호출
             }
         }
 
