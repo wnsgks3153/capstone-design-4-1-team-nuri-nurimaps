@@ -62,6 +62,7 @@ class CustomLocationSource(
                         longitude = customState.latLng.second
                         accuracy = 10f
                         time = System.currentTimeMillis()
+                        customState.altitude?.let { altitude = it }
                     }
                     onLocationChangedListener?.onLocationChanged(customLocation)
                 } else {

@@ -10,7 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 
 data class CustomLocationState(
     val isCustomLocationAvailable: Boolean,
-    val latLng: Pair<Double, Double>? = null
+    val latLng: Pair<Double, Double>? = null,
+    val altitude: Double? = null
 )
 
 @HiltViewModel
@@ -43,17 +44,32 @@ class PositionViewModel @Inject constructor(
         if (parsedList.size >= 3) {
             val position = PositionCalculator.calculatePosition(parsedList)
             if (position != null) {
-                Log.d(TAG, "Position calculated: x=${position.x}, y=${position.y}")
+                Log.d(TAG, "Position calculated: x=${position.x}, y=${position.y}, z=${position.z}")
+
                 val latLng = convertLocalToLatLng(baseLat, baseLng, position.x, position.y)
+
                 Log.d(TAG, "Converted latLng: lat=${latLng.first}, lng=${latLng.second}")
-                _customLocationState.value = CustomLocationState(true, latLng)
+                _customLocationState.value = CustomLocationState(
+                    isCustomLocationAvailable = true,
+                    latLng = latLng,
+                    altitude = position.z // z 값을 고도로 설정
+                )
+
             } else {
                 Log.w(TAG, "Position calculation failed.")
-                _customLocationState.value = CustomLocationState(false, null)
+                _customLocationState.value = CustomLocationState(
+                    isCustomLocationAvailable = false,
+                    latLng = null,
+                    altitude = null
+                )
             }
         } else {
             Log.w(TAG, "Insufficient parsed data. Size: ${parsedList.size}")
-            _customLocationState.value = CustomLocationState(false, null)
+            _customLocationState.value = CustomLocationState(
+                isCustomLocationAvailable = false,
+                latLng = null,
+                altitude = null
+            )
         }
     }
 

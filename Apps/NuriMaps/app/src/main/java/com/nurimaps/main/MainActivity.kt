@@ -13,6 +13,7 @@ import android.widget.ScrollView
 import android.widget.LinearLayout
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.addCallback
@@ -29,6 +30,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatImageButton
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.fragment.app.FragmentContainerView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.gms.location.LocationServices
 import com.google.android.material.navigation.NavigationView
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -49,6 +53,7 @@ import com.naver.maps.map.widget.ZoomControlView
 import com.nurimaps.feature.uwb.CustomLocationSource
 import com.nurimaps.feature.uwb.PositionViewModel
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
@@ -60,6 +65,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         private const val MAX_DISTANCE_TO_TARGET = 500.0
         private val TARGET_LOCATION = LatLng(36.1678660, 128.4676331)
         private const val LOCATION_PERMISSION_REQUEST_CODE = 100
+        private var overlayAutoChangeBlockedUntil = 0L
+        private val OVERLAY_BLOCK_DURATION = 3000L
     }
 
     // 상태 변수
@@ -155,6 +162,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         // CustomLocationSource 생성
         customLocationSource = CustomLocationSource(gpsLocationSource, positionViewModel)
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                positionViewModel.customLocationState.collect { state ->
+                    val newFloor = altitudeToFloor(state.altitude)
+                    if (newFloor != currentFloor) {
+                        changeFloor(newFloor)
+                    }
+                }
+            }
+        }
 
         onBackPressedDispatcher.addCallback(this) {
             if (drawerLayout.isDrawerOpen(navView)) {
@@ -317,6 +335,30 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         permissionLauncher.launch(permissions)
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                initMap()
+            } else {
+                Toast.makeText(this, "위치 권한이 필요합니다.", Toast.LENGTH_SHORT).show()
+                // 권한 없을 때 처리
+            }
+        }
+    }
+
+    private fun initMap() {
+        val mapFragment = supportFragmentManager.findFragmentById(R.id.map_fragment) as MapFragment?
+            ?: MapFragment.newInstance(NaverMapOptions()
+                .indoorEnabled(true)
+                .compassEnabled(false)
+                .zoomControlEnabled(false)
+                .locationButtonEnabled(true)
+            ).also {
+                supportFragmentManager.beginTransaction().add(R.id.map_fragment, it).commit()
+            }
+        mapFragment.getMapAsync(this)
+    }
 
     private fun initUI() {
         // 층수 관련 UI 컴포넌트 초기화
@@ -356,7 +398,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         floorButtonIds.forEach { (floor, buttonId) ->
             val button = findViewById<TextView>(buttonId)
             floorButtons[floor] = button
-            button.setOnClickListener { changeFloor(floor) }
+            button.setOnClickListener {
+                blockOverlayAutoChange()  // 차단 타이머 시작
+                changeFloor(floor)
+            }
         }
 
         initDefaultFloor()
@@ -366,31 +411,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun initDefaultFloor() {
         scrollToFloorButton(currentFloor)
         highlightSelectedFloor(currentFloor)
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                initMap()
-            } else {
-                Toast.makeText(this, "위치 권한이 필요합니다.", Toast.LENGTH_SHORT).show()
-                // 권한 없을 때 처리
-            }
-        }
-    }
-
-    private fun initMap() {
-        val mapFragment = supportFragmentManager.findFragmentById(R.id.map_fragment) as MapFragment?
-            ?: MapFragment.newInstance(NaverMapOptions()
-                .indoorEnabled(true)
-                .compassEnabled(false)
-                .zoomControlEnabled(false)
-                .locationButtonEnabled(true)
-            ).also {
-                supportFragmentManager.beginTransaction().add(R.id.map_fragment, it).commit()
-            }
-        mapFragment.getMapAsync(this)
     }
 
 //    override fun onBackPressed() {
@@ -462,6 +482,21 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         groundOverlay?.setMap(null)
     }
 
+    // 고도 값을 받아서 층 이름을 반환하는 예시 함수
+    fun altitudeToFloor(altitude: Double?): String {
+        if (altitude == null) return currentFloor // null이면 기존 층 유지
+
+        return when {
+            altitude > 12 -> "5F"
+            altitude > 9 -> "4F"
+            altitude > 6 -> "3F"
+            altitude > 3 -> "2F"
+            altitude > 0 -> "1F"
+            altitude > -3 -> "B1"
+            else -> "B2"
+        }
+    }
+
     // 층수에 맞는 오버레이 이미지 리소스 ID 반환
     private fun getOverlayImage(floor: String): OverlayImage {
         val overlayImageRes = when(floor) {
@@ -475,6 +510,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             else -> R.drawable.floor_image3 // 기본 3층
         }
         return OverlayImage.fromResource(overlayImageRes)
+    }
+
+    private fun updateOverlayImageWithAutoCheck(floor: String) {
+        val now = System.currentTimeMillis()
+        if (now >= overlayAutoChangeBlockedUntil) {
+            updateOverlayImage(floor)
+        } else {
+            // 차단 중이므로 오버레이 변경 안함
+            Log.d("MainActivity", "Overlay auto change blocked")
+        }
     }
 
     // 층수에 맞는 이미지를 업데이트하는 함수
@@ -523,10 +568,15 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun changeFloor(floor: String) {
         if (currentFloor != floor) {
             currentFloor = floor
-            updateOverlayImage(floor)
+            // 오버레이 이미지는 자동변경 제한 체크 후 변경
+            updateOverlayImageWithAutoCheck(floor)
             highlightSelectedFloor(floor)
             scrollToFloorButton(floor)
         }
+    }
+
+    private fun blockOverlayAutoChange() {
+        overlayAutoChangeBlockedUntil = System.currentTimeMillis() + OVERLAY_BLOCK_DURATION
     }
 
     // 선택된 층수 버튼 강조
