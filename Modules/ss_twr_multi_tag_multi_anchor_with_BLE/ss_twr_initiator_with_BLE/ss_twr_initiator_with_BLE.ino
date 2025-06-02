@@ -153,7 +153,7 @@ static double tof;
 static double distance;
 static double distanceSUM[3] = { 0 };  // 오차를 줄이기 위한 평균 계산용 소수 배열 변수
 double distanceAVG;                    // 오차를 줄이기 위한 평균 계산용 소수 배열 변수
-
+int invalidValueFlag = 1;
 /* PG_DELAY 및 TX_POWER 레지스터의 값은 현재 온도에서 대역폭과 스펙트럼 전력을 반영함.
  * 이러한 값은 기준 측정을 수행하기 전에 보정할 수 있음. 아래 참고 사항 2 참조. */
 extern dwt_txconfig_t txconfig_options;
@@ -249,19 +249,25 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
 
       String nameStr = advertisedDevice.getName();
       if (nameStr.startsWith("0x02") && nameStr.length() == 18) {
-        if (filteredDeviceCount < MAX_DEVICES) {
-          // 이름 저장
-          nameStr.toCharArray(filteredDeviceNames[filteredDeviceCount], MAX_NAME_LEN);
+        // 앵커 순번 추출: substring(4, 7) => 실제는 인덱스 5~6 (예: "03")
+        String anchorIdStr = nameStr.substring(5, 7);
 
-          // 앵커 순번 추출: 4~6번째 인덱스 -> substring(4, 7)
-          String anchorIdStr = nameStr.substring(5, 7);  // "03" 같은 부분 추출
-          int anchorId = anchorIdStr.toInt();            // 정수로 변환하여 저장
-          anchorIds[filteredDeviceCount] = anchorId;
-
-          filteredDeviceCount++;
+        // 유효성 검사: 이름이 비어있지 않고, 번호가 "00"이 아닌 경우에만 저장
+        if (anchorIdStr != "00" && nameStr.length() > 0) {
+          if (filteredDeviceCount < MAX_DEVICES) {
+            nameStr.toCharArray(filteredDeviceNames[filteredDeviceCount], MAX_NAME_LEN);
+            int anchorId = anchorIdStr.toInt();
+            anchorIds[filteredDeviceCount] = anchorId;
+            filteredDeviceCount++;
+          }
         }
       }
 
+      if (filteredDeviceCount < 3) {
+        invalidValueFlag = 0;
+      } else {
+        invalidValueFlag = 1;
+      }
       myDevice = new BLEAdvertisedDevice(advertisedDevice);
     }
   }
@@ -278,6 +284,11 @@ float rangeDelay;              // 거리 측정 간 딜레이 기간(단위: 밀
 int conversionMS = -10000000;  // clockoffset에 conversionMS를 곱하여 딜레이용 시간으로 변환하기위한 변수
 
 void communicateWithAnchors() {
+
+  if (invalidValueFlag == 0) {
+    return;
+  }
+
   for (int i = 0; i < 5; i++) {    // 5번을 측정하여 평균을 계산하여 오차를 보정(성능 저하가 생기는 경우 변경 예정)
     for (int j = 0; j < 3; j++) {  // 앵커 리스트에서 차례대로 3개의 주소를 꺼내와 통신
       if (strncmp(filteredDeviceNames[j], "0x", 2) == 0 && strlen(filteredDeviceNames[j]) == 18) {
@@ -409,6 +420,7 @@ void communicateWithAnchors() {
         }
 
         /* 거리 측정 교환 간에 딜레이를 실행 */
+        Serial.println(rangeDelay);
         Sleep(rangeDelay);
       }
     }
@@ -506,8 +518,8 @@ void initBLE() {
      즉, 1초 동안 0.3초간 2번 스캔 루프를 실행*/
   pBLEScan = BLEDevice::getScan();
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
-  pBLEScan->setInterval(300);     // 300ms마다 스캔 루프 실행
-  pBLEScan->setWindow(150);       // 150ms동안 스캔
+  pBLEScan->setInterval(200);     // 300ms마다 스캔 루프 실행
+  pBLEScan->setWindow(200);       // 150ms동안 스캔
   pBLEScan->setActiveScan(true);  // 추가 Response를 받기 위해서 ActiveScan을 활성화(= 장치이름, UUID, 등을 추가로 더 받는다는 뜻)
 }
 
@@ -518,8 +530,9 @@ void setup() {
 }
 
 void loop() {
+  invalidValueFlag = 1;  // 기본은 유효하다고 가정
   unsigned long currentMillis = millis();
-  char msg_buffer[10];   // 결과 포맷용 임시 버퍼
+  char msg_buffer[20];   // 결과 포맷용 임시 버퍼 (길이 늘림)
   bleMessage[0] = '\0';  // 메세지 초기화
 
   // 3초(3000ms)마다 스캔 수행
@@ -529,28 +542,41 @@ void loop() {
     pBLEScan->start(1, false);  // 1초 동안 스캔 (false = 비동기)
   }
 
-  communicateWithAnchors();  // 앵커의 주소를 가져오는 것을 함수 내부에서 동작하도록 변경
+  communicateWithAnchors();  // 앵커 주소 가져오기
 
+  // 거리 값 유효성 검사
   for (int i = 0; i < 3; i++) {
     distanceAVG = distanceSUM[i] / 5.0;
-    int convertINT = round(distanceAVG * 100);
-    int anchorID = anchorIds[i];
+    if (distanceAVG < 0.01) {
+      invalidValueFlag = 0;  // 하나라도 유효하지 않으면 전체 무효
+      break;
+    }
+  }
 
-    Serial.print(anchorIds[i]);
-    Serial.print(": ");
-    Serial.println(distanceAVG);
+  if (invalidValueFlag == 1) {
+    for (int i = 0; i < 3; i++) {
+      distanceAVG = distanceSUM[i] / 5.0;
+      int convertINT = round(distanceAVG * 100);
+      int anchorID = anchorIds[i];
 
-    sprintf(msg_buffer, "%02d%04d", anchorID, convertINT);
-    strcat(bleMessage, msg_buffer);  // 결과 문자열에 추가
-    distanceSUM[i] = { 0.0 };
+      Serial.print(anchorID);
+      Serial.print(": ");
+      Serial.println(distanceAVG);
+
+      sprintf(msg_buffer, "%02d%04d", anchorID, convertINT);
+      strcat(bleMessage, msg_buffer);  // 결과 문자열에 추가
+      distanceSUM[i] = 0.0;            // 누적값 초기화
+    }
+  } else {
+    sprintf(msg_buffer, "invalidValue");
+    strcat(bleMessage, msg_buffer);  // 오류 문자열 설정
   }
 
   Serial.print("Formatted txString: ");
   Serial.println(bleMessage);
+  Serial.println(filteredDeviceCount);
+  Serial.println(invalidValueFlag);
 
-  delay(5000);  // 디버그용
-
-  //실제 휴대폰으로 데이터 전송용 값 저장 및 notify() 호출을 통해 전달
   pCharacteristic->setValue(bleMessage);
   pCharacteristic->notify();
 }

@@ -27,4 +27,6 @@ interface BLEController {
     fun disConnect()
 
     fun sendValue(text: String)
+
+    fun setOnDataReceivedListener(listener: (String) -> Unit)
 }

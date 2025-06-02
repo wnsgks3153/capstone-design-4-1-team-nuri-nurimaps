@@ -39,8 +39,14 @@ import java.util.UUID
 @SuppressLint("MissingPermission")
 class BLEControllerImpl(
     private val context: Context,
-    private val viewModel: PositionViewModel
+    //private val viewModel: PositionViewModel
 ) : BLEController {
+
+    private var onDataReceived: ((String) -> Unit)? = null
+
+    override fun setOnDataReceivedListener(listener: (String) -> Unit) {
+        onDataReceived = listener
+    }
 
     private val bluetoothManager by lazy {
         context.getSystemService(BluetoothManager::class.java)
@@ -196,7 +202,8 @@ class BLEControllerImpl(
 
             if (characteristic.uuid == notifyCharacteristic?.uuid) {
                 val receivedString = value.toString(Charsets.UTF_8)
-                viewModel.onBleDataReceived(receivedString)  // 여기서 호출
+                _receivedValues.update { values -> values + receivedString }
+                onDataReceived?.invoke(receivedString) // ✅ 여기서 ViewModel로 전달됨
             }
         }
 

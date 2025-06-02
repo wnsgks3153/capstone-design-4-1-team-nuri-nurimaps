@@ -20,6 +20,7 @@ import androidx.cardview.widget.CardView
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.core.view.ViewCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -45,6 +46,8 @@ import com.naver.maps.map.overlay.OverlayImage
 import com.naver.maps.map.overlay.GroundOverlay
 import com.naver.maps.map.util.FusedLocationSource
 import com.naver.maps.map.widget.ZoomControlView
+import com.nurimaps.feature.uwb.CustomLocationSource
+import com.nurimaps.feature.uwb.PositionViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -76,9 +79,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private val floorButtons = mutableMapOf<String, TextView>()
 
     // 위치를 받아오기 위한
-    private lateinit var locationSource: FusedLocationSource
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    //private lateinit var locationSource: FusedLocationSource //
     private lateinit var naverMap: NaverMap
+
+    private val positionViewModel: PositionViewModel by viewModels()
+    private lateinit var customLocationSource: CustomLocationSource
+    private lateinit var gpsLocationSource: FusedLocationSource // GPS LocationSource 참조 유지
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -144,7 +151,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        locationSource = FusedLocationSource(this, LOCATION_PERMISSION_REQUEST_CODE).apply {}
+        gpsLocationSource = FusedLocationSource(this, LOCATION_PERMISSION_REQUEST_CODE).apply {}
+
+        // CustomLocationSource 생성
+        customLocationSource = CustomLocationSource(gpsLocationSource, positionViewModel)
 
         onBackPressedDispatcher.addCallback(this) {
             if (drawerLayout.isDrawerOpen(navView)) {
@@ -223,32 +233,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     }
 
-    private fun requestAllPermissions() {
-        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_ADVERTISE
-            )
-        } else {
-            arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.BLUETOOTH,
-                Manifest.permission.BLUETOOTH_ADMIN
-            )
-        }
-
-        permissionLauncher.launch(permissions)
-    }
-
     override fun onMapReady(naverMap: NaverMap) {
 
         // 초기 심볼 스케일 설정
         naverMap.setSymbolScale(1.0f)
-        naverMap.locationSource = locationSource
+
+
+        // CustomLocationSource 사용
+        // naverMap.locationSource = locationSource
+        naverMap.locationSource = customLocationSource
+
         naverMap.isIndoorEnabled = true
         naverMap.uiSettings.isLocationButtonEnabled = true
         naverMap.uiSettings.isCompassEnabled = false
@@ -259,7 +253,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         naverMap.locationTrackingMode = LocationTrackingMode.Follow
         naverMap.addOnOptionChangeListener {
             val mode = naverMap.locationTrackingMode
-            locationSource.isCompassEnabled = mode == LocationTrackingMode.Follow || mode == LocationTrackingMode.Face
+            gpsLocationSource.isCompassEnabled = mode == LocationTrackingMode.Follow || mode == LocationTrackingMode.Face
         }
 
         if (ActivityCompat.checkSelfPermission(
@@ -293,6 +287,36 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         setupCameraListener(naverMap)
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // CustomLocationSource 정리
+        if (::customLocationSource.isInitialized) {
+            customLocationSource.deactivate()
+        }
+    }
+
+    private fun requestAllPermissions() {
+        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_ADVERTISE
+            )
+        } else {
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.BLUETOOTH,
+                Manifest.permission.BLUETOOTH_ADMIN
+            )
+        }
+
+        permissionLauncher.launch(permissions)
+    }
+
 
     private fun initUI() {
         // 층수 관련 UI 컴포넌트 초기화

@@ -53,7 +53,7 @@ static dwt_aes_config_t aes_config = {
   추출된 태그의 주소를 DEST_ADDR 변수에 저장되도록 변경 */
 
 #define DEST_PAN_ID 0x4321          /* PAN ID (네트워크 식별자) */
-#define SRC_ADDR 0x0200300100300030 /* 이니시에이터(발신기) 주소 */
+#define SRC_ADDR 0x0200200100300030 /* 이니시에이터(발신기) 주소 */
 static uint64_t DEST_ADDR;      /* 리스폰더(응답기) 주소 */
 #define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb54831-36e1-4688-b7f5-ea07361b26a8"
