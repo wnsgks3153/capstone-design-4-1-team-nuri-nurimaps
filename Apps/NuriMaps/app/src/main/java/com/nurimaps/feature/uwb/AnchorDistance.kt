@@ -11,9 +11,11 @@ object BleDataParser {
      * BLE로부터 받은 문자열을 파싱하고, Anchor + 거리로 변환
      * 예: "060102090130040210" → [Anchor(id=6)..., distance=1.02], ...
      */
-    fun parse(rawData: String): List<AnchorDistance> {
-        val result = mutableListOf<AnchorDistance>()
+    val anchorCache = AnchorDistanceCache()
+
+    fun parseAndCache(rawData: String): List<AnchorDistance> {
         var i = 0
+
         while (i + 5 < rawData.length) {
             try {
                 val id = rawData.substring(i, i + 2).toInt()
@@ -22,13 +24,15 @@ object BleDataParser {
 
                 val anchor = AnchorRepository.getAnchorById(id)
                 if (anchor != null) {
-                    result.add(AnchorDistance(anchor, distance))
+                    val anchorDistance = AnchorDistance(anchor, distance)
+                    anchorCache.update(anchorDistance)
                 }
             } catch (e: Exception) {
-                e.printStackTrace() // 오류 시 무시
+                e.printStackTrace()
             }
             i += 6
         }
-        return result
+
+        return anchorCache.getAnchors()
     }
 }

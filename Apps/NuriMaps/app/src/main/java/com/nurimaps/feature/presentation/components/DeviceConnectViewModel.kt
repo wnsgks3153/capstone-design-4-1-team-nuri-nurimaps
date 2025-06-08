@@ -1,7 +1,6 @@
 package com.nurimaps.feature.presentation.components
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.asLiveData
 import androidx.lifecycle.viewModelScope
 import com.nurimaps.feature.ble.domain.BLEController
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -94,7 +93,8 @@ class DeviceConnectViewModel @Inject constructor(
     }
 
     fun disconnect() {
-        bleController.disConnect()
+        //bleController.disConnect()
+        _state.update { it.copy(isConnected = false) }
     }
 
     fun sendValue(text: String) {
@@ -103,6 +103,5 @@ class DeviceConnectViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        bleController.release()
     }
 }

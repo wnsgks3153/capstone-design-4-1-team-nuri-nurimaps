@@ -1,17 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <TextView
-        android:id="@+id/title_text"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="개발자 도구 모음이 들어올 레이아웃입니다."
-        android:textSize="20sp"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        android:layout_margin="24dp"/>
+    <LinearLayout
+        android:id="@+id/dev_tools_container"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="GPS 위치 및 고도"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/text_gps_position"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="위치: - , 고도: -" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="계산된 위치 및 고도"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp" />
+
+        <TextView
+            android:id="@+id/text_calculated_position"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="위치: - , 고도: -" />
+
+        <CheckBox
+            android:id="@+id/checkbox_show_distances"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="BLE 앵커와 사용자 사이 거리 표시" />
+
+        <CheckBox
+            android:id="@+id/checkbox_show_anchor_markers"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="앵커 마커 표시" />
+    </LinearLayout>
+</ScrollView>
+

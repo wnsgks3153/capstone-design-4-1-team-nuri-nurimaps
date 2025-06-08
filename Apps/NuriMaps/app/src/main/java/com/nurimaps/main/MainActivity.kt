@@ -237,9 +237,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             findViewById<ZoomControlView>(R.id.zoom).visibility =
                 if (isContentVisible) View.GONE else View.VISIBLE
 
-            findViewById<CardView>(R.id.floors_card_container).visibility =
-                if (isContentVisible) View.GONE else View.VISIBLE
-
             showTopLeftButton(!isContentVisible) // content_frame이 보이면 true, 아니면 false
 
             drawerLayout.setDrawerLockMode(
@@ -256,9 +253,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // 초기 심볼 스케일 설정
         naverMap.setSymbolScale(1.0f)
 
-
         // CustomLocationSource 사용
-        // naverMap.locationSource = locationSource
         naverMap.locationSource = customLocationSource
 
         naverMap.isIndoorEnabled = true
@@ -304,14 +299,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
 
         setupCameraListener(naverMap)
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        // CustomLocationSource 정리
-        if (::customLocationSource.isInitialized) {
-            customLocationSource.deactivate()
-        }
     }
 
     private fun requestAllPermissions() {
@@ -360,6 +347,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         mapFragment.getMapAsync(this)
     }
 
+    fun showTopLeftButton(show: Boolean) {
+        if (::topLeftButton.isInitialized) {
+            topLeftButton.visibility = if (show) View.VISIBLE else View.GONE
+        }
+    }
+
     private fun initUI() {
         // 층수 관련 UI 컴포넌트 초기화
         floorsCardContainer = findViewById(R.id.floors_card_container)
@@ -376,9 +369,25 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         initFloorButtons()
     }
 
-    fun showTopLeftButton(show: Boolean) {
-        if (::topLeftButton.isInitialized) {
-            topLeftButton.visibility = if (show) View.VISIBLE else View.GONE
+    private fun setupCameraListener(naverMap: NaverMap) {
+        naverMap.addOnCameraIdleListener {
+            val zoomLevel = naverMap.cameraPosition.zoom
+            val cameraPosition = naverMap.cameraPosition.target
+            val distanceToTarget = cameraPosition.distanceTo(TARGET_LOCATION)
+
+            if (zoomLevel >= MAP_ZOOM_THRESHOLD && distanceToTarget <= MAX_DISTANCE_TO_TARGET) {
+                naverMap.setSymbolScale(0.0f)
+                showOverlay(naverMap)
+                showFloorUI()
+
+                // 사용자가 화면 이동한 것이므로 자동 전환 차단
+                blockOverlayAutoChange()
+
+            } else {
+                naverMap.setSymbolScale(1.0f)
+                hideOverlay()
+                hideFloorUI()
+            }
         }
     }
 
@@ -413,52 +422,48 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         highlightSelectedFloor(currentFloor)
     }
 
-//    override fun onBackPressed() {
-//        if (drawerLayout.isDrawerOpen(navView)) {
-//            drawerLayout.closeDrawer(navView)
-//        } else {
-//            val currentFragment = supportFragmentManager.findFragmentById(R.id.content_frame)
-//            val dispatcher = onBackPressedDispatcher
-//
-//            val lifecycleOwner = (currentFragment?.viewLifecycleOwner)
-//            val backStackCount = supportFragmentManager.backStackEntryCount
-//
-//            // 현재 Fragment에 OnBackPressedCallback이 있는 경우
-//            if (lifecycleOwner != null && backStackCount > 0) {
-//                dispatcher.onBackPressed() // 👉 Fragment에서 등록한 콜백으로 이동
-//            } else if (backStackCount > 0) {
-//                supportFragmentManager.popBackStack()
-//            } else {
-//                super.onBackPressed()
-//            }
-//        }
-//    }
+    // 특정 버튼으로 스크롤
+    private fun scrollToFloorButton(floor: String) {
+        val buttonIndex = when (floor) {
+            "5F" -> 0
+            "4F" -> 1
+            "3F" -> 2
+            "2F" -> 3
+            "1F" -> 4
+            "B1" -> 5
+            "B2" -> 6
+            else -> 2
+        }
 
-    private fun setupCameraListener(naverMap: NaverMap) {
-        naverMap.addOnCameraIdleListener {
-            val zoomLevel = naverMap.cameraPosition.zoom
-            val cameraPosition = naverMap.cameraPosition.target
+        floorScrollView.post {
+            val targetView = floorButtonLayout.getChildAt(buttonIndex)
+            if (targetView != null) {
+                val buttonTop = targetView.top
+                val buttonHeight = targetView.height
+                val scrollViewHeight = floorScrollView.height
 
-            val distanceToTarget = cameraPosition.distanceTo(TARGET_LOCATION)
-
-            // 줌 레벨이 17 이상이고 타겟 위치에서 500m 이내일 때만 심볼 숨김
-            if (zoomLevel >= MAP_ZOOM_THRESHOLD && distanceToTarget <= MAX_DISTANCE_TO_TARGET) {
-                naverMap.setSymbolScale(0.0f)  // 심볼 숨김
-                showOverlay(naverMap)  // 오버레이 표시
-                showFloorUI()  // 층수 UI 표시
-            } else {
-                naverMap.setSymbolScale(1.0f)  // 기본 심볼 크기로 표시
-                hideOverlay()  // 오버레이 숨김
-                hideFloorUI()  // 층수 UI 숨김
+                val scrollTo = buttonTop - (scrollViewHeight / 2) + (buttonHeight / 2)
+                floorScrollView.smoothScrollTo(0, if (scrollTo < 0) 0 else scrollTo)
             }
+        }
+    }
+
+    // 선택된 층수 버튼 강조
+    private fun highlightSelectedFloor(floor: String) {
+        resetAllFloorButtons()
+
+        floorButtons[floor]?.apply {
+            isSelected = true
+            setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.black))
+            typeface = Typeface.DEFAULT_BOLD
         }
     }
 
     // 오버레이 표시
     private fun showOverlay(naverMap: NaverMap) {
         if (groundOverlay == null) {
-            val southWest = LatLng(36.16777, 128.46721) // 좌측 하단
-            val northEast = LatLng(36.16796, 128.46813) // 우측 상단
+            val southWest = LatLng(36.16757, 128.46712) // 좌측 하단
+            val northEast = LatLng(36.16796, 128.46823) // 우측 상단
 
             // LatLngBounds로 범위 설정
             val bounds = LatLngBounds(southWest, northEast)
@@ -487,13 +492,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         if (altitude == null) return currentFloor // null이면 기존 층 유지
 
         return when {
-            altitude > 12 -> "5F"
-            altitude > 9 -> "4F"
-            altitude > 6 -> "3F"
-            altitude > 3 -> "2F"
-            altitude > 0 -> "1F"
-            altitude > -3 -> "B1"
-            else -> "B2"
+            altitude > 9.5 -> "4F"
+            altitude <= 9.5 -> "3F"
+            else -> "3F"
         }
     }
 
@@ -501,8 +502,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun getOverlayImage(floor: String): OverlayImage {
         val overlayImageRes = when(floor) {
             "5F" -> R.drawable.floor_image3 // 실제 5층 이미지로 변경 필요
-            "4F" -> R.drawable.floor_image4_2_1
-            "3F" -> R.drawable.floor_image3_2_1
+            "4F" -> R.drawable.floor_images4_2_0_75
+            "3F" -> R.drawable.floor_images3_2_0_5
             "2F" -> R.drawable.floor_image3 // 실제 2층 이미지로 변경 필요
             "1F" -> R.drawable.floor_image3 // 실제 1층 이미지로 변경 필요
             "B1" -> R.drawable.floor_image3 // 실제 B1층 이미지로 변경 필요
@@ -512,15 +513,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         return OverlayImage.fromResource(overlayImageRes)
     }
 
-    private fun updateOverlayImageWithAutoCheck(floor: String) {
-        val now = System.currentTimeMillis()
-        if (now >= overlayAutoChangeBlockedUntil) {
-            updateOverlayImage(floor)
-        } else {
-            // 차단 중이므로 오버레이 변경 안함
-            Log.d("MainActivity", "Overlay auto change blocked")
-        }
-    }
 
     // 층수에 맞는 이미지를 업데이트하는 함수
     private fun updateOverlayImage(floor: String) {
@@ -538,56 +530,22 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         floorsCardContainer.visibility = View.GONE
     }
 
-    // 특정 버튼으로 스크롤
-    private fun scrollToFloorButton(floor: String) {
-        val buttonIndex = when (floor) {
-            "5F" -> 0
-            "4F" -> 1
-            "3F" -> 2
-            "2F" -> 3
-            "1F" -> 4
-            "B1" -> 5
-            "B2" -> 6
-            else -> 2
-        }
-
-        floorScrollView.post {
-            val targetView = floorButtonLayout.getChildAt(buttonIndex)
-            if (targetView != null) {
-                val buttonTop = targetView.top
-                val buttonHeight = targetView.height
-                val scrollViewHeight = floorScrollView.height
-
-                val scrollTo = buttonTop - (scrollViewHeight / 2) + (buttonHeight / 2)
-                floorScrollView.smoothScrollTo(0, if (scrollTo < 0) 0 else scrollTo)
-            }
-        }
-    }
 
     // 층 변경 처리
     private fun changeFloor(floor: String) {
         if (currentFloor != floor) {
             currentFloor = floor
-            // 오버레이 이미지는 자동변경 제한 체크 후 변경
-            updateOverlayImageWithAutoCheck(floor)
+            updateOverlayImage(floor)
             highlightSelectedFloor(floor)
             scrollToFloorButton(floor)
+
+            // 수동으로 층을 변경한 것이므로 자동 전환 차단
+            blockOverlayAutoChange()
         }
     }
 
     private fun blockOverlayAutoChange() {
         overlayAutoChangeBlockedUntil = System.currentTimeMillis() + OVERLAY_BLOCK_DURATION
-    }
-
-    // 선택된 층수 버튼 강조
-    private fun highlightSelectedFloor(floor: String) {
-        resetAllFloorButtons()
-
-        floorButtons[floor]?.apply {
-            isSelected = true
-            setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.black))
-            typeface = Typeface.DEFAULT_BOLD
-        }
     }
 
     // 모든 층수 버튼 초기화
@@ -598,4 +556,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             button.typeface = Typeface.DEFAULT
         }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // CustomLocationSource 정리
+        if (::customLocationSource.isInitialized) {
+            customLocationSource.deactivate()
+        }
+    }
+
 }

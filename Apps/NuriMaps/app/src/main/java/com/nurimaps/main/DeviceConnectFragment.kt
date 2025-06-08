@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 class DeviceConnectFragment : Fragment(){
 
     private val viewModel: DeviceConnectViewModel by activityViewModels()
-
+    private var hasNavigatedToCommunication = false
     private val _hasNavigatedToChat = MutableStateFlow(false)
     val hasNavigatedToChat: StateFlow<Boolean> = _hasNavigatedToChat
 
@@ -62,14 +62,26 @@ class DeviceConnectFragment : Fragment(){
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+
         toolbar = view.findViewById(R.id.device_toolbar)
         pairedRecyclerView = view.findViewById(R.id.pairedDeviceRecyclerView)
         foundRecyclerView = view.findViewById(R.id.foundDeviceRecyclerView)
         startScanBtn = view.findViewById(R.id.btn_start_scan)
         stopScanBtn = view.findViewById(R.id.btn_stop_scan)
 
-        // 툴바 설정
-        setupToolbar()
+        (activity as? AppCompatActivity)?.setSupportActionBar(toolbar)
+        (activity as? AppCompatActivity)?.supportActionBar?.setDisplayHomeAsUpEnabled(false)
+        (activity as? AppCompatActivity)?.supportActionBar?.setHomeButtonEnabled(false)
+
+        toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_scan_devices -> {
+                    viewModel.startScan()
+                    true
+                }
+                else -> false
+            }
+        }
 
         pairedAdapter = DeviceAdapter { device ->
             viewModel.connect(device.address)
@@ -95,28 +107,12 @@ class DeviceConnectFragment : Fragment(){
         observeState()
     }
 
-    private fun setupToolbar() {
-        (activity as? AppCompatActivity)?.setSupportActionBar(toolbar)
-        val handleBack: () -> Unit = {
-            parentFragmentManager.popBackStack()
-        }
+    override fun onResume() {
+        super.onResume()
 
-        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner) {
-            handleBack()
-        }
-
-        toolbar.setNavigationOnClickListener {
-            handleBack()
-        }
-
-        toolbar.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_scan_devices -> {
-                    viewModel.startScan()
-                    true
-                }
-                else -> false
-            }
+        // 연결 상태가 이전에 남아있었다면 초기화
+        if (viewModel.state.value.isConnected) {
+            viewModel.disconnect() // 혹은 viewModel.resetState() 같은 함수 구현
         }
     }
 
@@ -127,12 +123,16 @@ class DeviceConnectFragment : Fragment(){
                     pairedAdapter.submitList(state.pairedDevices)
                     scannedAdapter.submitList(state.scannedDevices)
 
-                    // 현재 Fragment가 DeviceCommunicationFragment가 아닐 때만 이동
                     val currentFragment = parentFragmentManager.findFragmentById(R.id.content_frame)
                     val isCommunicationScreenVisible = currentFragment is DeviceCommunicationFragment
 
-                    if (state.isConnected && !isCommunicationScreenVisible) {
+                    if (state.isConnected && !isCommunicationScreenVisible && !hasNavigatedToCommunication) {
+                        hasNavigatedToCommunication = true
                         goToDeviceCommunicationFragment()
+                    }
+
+                    if (!state.isConnected) {
+                        hasNavigatedToCommunication = false
                     }
                 }
             }
@@ -142,7 +142,7 @@ class DeviceConnectFragment : Fragment(){
     private fun goToDeviceCommunicationFragment() {
         parentFragmentManager.beginTransaction()
             .replace(R.id.content_frame, DeviceCommunicationFragment()) // 이 ID는 적절히 변경
-            .addToBackStack(null)
+            .addToBackStack("DeviceCommunication")
             .commit()
     }
 

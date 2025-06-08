@@ -24,6 +24,7 @@ import com.nurimaps.feature.ble.domain.model.BluetoothDeviceModel
 import com.nurimaps.feature.uwb.BleDataParser
 import com.nurimaps.feature.uwb.PositionCalculator
 import com.nurimaps.feature.uwb.PositionViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -35,11 +36,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Singleton
 
 @SuppressLint("MissingPermission")
-class BLEControllerImpl(
-    private val context: Context,
-    //private val viewModel: PositionViewModel
+@Singleton
+class BLEControllerImpl @Inject constructor(
+    @ApplicationContext private val context: Context
 ) : BLEController {
 
     private var onDataReceived: ((String) -> Unit)? = null

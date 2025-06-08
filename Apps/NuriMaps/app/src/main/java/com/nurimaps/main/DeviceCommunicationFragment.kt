@@ -63,12 +63,6 @@ class DeviceCommunicationFragment : Fragment() {
             }
         }
 
-        disconnectButton.setOnClickListener {
-            viewModel.disconnect()
-            // 필요하면 뒤로 가기 등 화면 전환 처리
-            parentFragmentManager.popBackStack()
-        }
-
         sendButton.setOnClickListener {
             val textToSend = sendEditText.text.toString()
             if (textToSend.isNotBlank()) {
@@ -76,11 +70,6 @@ class DeviceCommunicationFragment : Fragment() {
                 sendEditText.text.clear()
                 hideKeyboard()
             }
-        }
-
-        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner) {
-            viewModel.disconnect()  // 연결 해제
-            parentFragmentManager.popBackStack()  // 뒤로가기
         }
     }
 

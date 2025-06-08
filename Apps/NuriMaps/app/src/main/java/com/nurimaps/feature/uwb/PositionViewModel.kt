@@ -38,11 +38,26 @@ class PositionViewModel @Inject constructor(
 
     fun onBleDataReceived(rawData: String) {
         Log.d(TAG, "Parsing raw data...")
-        val parsedList = BleDataParser.parse(rawData)
-        Log.d(TAG, "Parsed list size: ${parsedList.size}")
 
-        if (parsedList.size >= 3) {
-            val position = PositionCalculator.calculatePosition(parsedList)
+        // 1. BLE 문자열을 파싱하고 캐시에 반영
+        BleDataParser.parseAndCache(rawData)
+
+        // 2. 최신 3개 AnchorDistance 가져오기
+        val latestAnchors = BleDataParser.anchorCache.getAnchors()
+
+        Log.d(TAG, "🔍 Latest Anchors (${latestAnchors.size}):")
+        latestAnchors.forEachIndexed { index, anchorDistance ->
+            val anchor = anchorDistance.anchor
+            val distance = anchorDistance.distance
+            Log.d(
+                TAG, "[$index] Anchor ID=${anchor.id}, " +
+                        "Distance=${"%.2f".format(distance)}m, " +
+                        "Position=(${anchor.x}, ${anchor.y}, ${anchor.z})"
+            )
+        }
+
+        if (latestAnchors.size >= 3) {
+            val position = PositionCalculator.calculatePosition(latestAnchors)
             if (position != null) {
                 Log.d(TAG, "Position calculated: x=${position.x}, y=${position.y}, z=${position.z}")
 
@@ -52,28 +67,19 @@ class PositionViewModel @Inject constructor(
                 _customLocationState.value = CustomLocationState(
                     isCustomLocationAvailable = true,
                     latLng = latLng,
-                    altitude = position.z // z 값을 고도로 설정
+                    altitude = position.z
                 )
-
             } else {
                 Log.w(TAG, "Position calculation failed.")
-                _customLocationState.value = CustomLocationState(
-                    isCustomLocationAvailable = false,
-                    latLng = null,
-                    altitude = null
-                )
+                _customLocationState.value = CustomLocationState(false, null, null)
             }
         } else {
-            Log.w(TAG, "Insufficient parsed data. Size: ${parsedList.size}")
-            _customLocationState.value = CustomLocationState(
-                isCustomLocationAvailable = false,
-                latLng = null,
-                altitude = null
-            )
+            Log.w(TAG, "Not enough anchor data. Size: ${latestAnchors.size}")
+            _customLocationState.value = CustomLocationState(false, null, null)
         }
     }
 
-    private fun convertLocalToLatLng(baseLat: Double, baseLng: Double, x: Double, y: Double): Pair<Double, Double> {
+    fun convertLocalToLatLng(baseLat: Double, baseLng: Double, x: Double, y: Double): Pair<Double, Double> {
         val earthRadius = 6378137.0
         val deltaLat = y / earthRadius * (180 / Math.PI)
         val deltaLng = x / (earthRadius * Math.cos(baseLat * Math.PI / 180)) * (180 / Math.PI)
