@@ -489,12 +489,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     // 고도 값을 받아서 층 이름을 반환하는 예시 함수
     fun altitudeToFloor(altitude: Double?): String {
-        if (altitude == null) return currentFloor // null이면 기존 층 유지
+        if (altitude == null) return currentFloor // 고도값 없으면 현재 층 유지
 
-        return when {
-            altitude > 9.5 -> "4F"
-            altitude <= 9.5 -> "3F"
-            else -> "3F"
+        return when (currentFloor) {
+            "3F" -> {
+                if (altitude >= 11.1) "4F" else "3F"
+            }
+            "4F" -> {
+                if (altitude <= 9.3) "3F" else "4F"
+            }
+            else -> currentFloor // 그 외 층이면 변경하지 않음
         }
     }
 
